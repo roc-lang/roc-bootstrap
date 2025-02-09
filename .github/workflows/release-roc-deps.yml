@@ -40,16 +40,29 @@ jobs:
       - name: Build Deps
         run: |
           mkdir -p out/${{ matrix.target }}-baseline
-
-      # TODO: switch to zip on windows targets
-      - name: Archive Deps
-        run: |
           mv out/${{ matrix.target }}-baseline out/${{ matrix.target }}
+
+      - name: Archive Deps (Unix)
+        if: "!contains(${{ matrix.target }}, 'windows')"
+        run: |
           tar -cf - -C out ${{ matrix.target }} | xz -9e -v -c - > out/${{ matrix.target }}.tar.xz
 
-      - name: Upload Release Artifact
+      - name: Upload Release Artifact (Unix)
+        if: "!contains(${{ matrix.target }}, 'windows')"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload ${{ github.ref_name }} out/${{ matrix.target }}.tar.xz
+
+      - name: Archive Deps (Windows)
+        if: "contains(${{ matrix.target }}, 'windows')"
+        run: |
+          (cd out && zip -r -9 ${{ matrix.target }}.zip ${{ matrix.target }})
+
+      - name: Upload Release Artifact (Windows)
+        if: "contains(${{ matrix.target }}, 'windows')"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload ${{ github.ref_name }} out/${{ matrix.target }}.zip
 
