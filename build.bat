@@ -29,6 +29,7 @@ FOR /F "tokens=2,3 delims=-" %%i IN ("%TARGET%") DO (
   IF "%%i"=="openbsd" set "TARGET_OS_CMAKE=OpenBSD"
   IF "%%i"=="windows" set "TARGET_OS_CMAKE=Windows"
   IF "%%i"=="linux" set "TARGET_OS_CMAKE=Linux"
+  IF "%%i"=="wasi" set "TARGET_OS_CMAKE=WASI"
   set TARGET_ABI=%%j
 )
 
@@ -228,7 +229,7 @@ cmake "%ROOTDIR%/llvm" ^
   -DLLVM_ENABLE_LIBXML2=OFF ^
   -DLLVM_ENABLE_OCAMLDOC=OFF ^
   -DLLVM_ENABLE_PLUGINS=OFF ^
-  -DLLVM_ENABLE_PROJECTS="lld;clang" ^
+  -DLLVM_ENABLE_PROJECTS="lld" ^
   -DLLVM_ENABLE_Z3_SOLVER=OFF ^
   -DLLVM_ENABLE_ZLIB=FORCE_ON ^
   -DLLVM_ENABLE_ZSTD=FORCE_ON ^
@@ -258,20 +259,20 @@ cmake "%ROOTDIR%/llvm" ^
   %ZLIB_LIBRARY%
 if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
 cmake --build . %JOBS_ARG% --target install
-if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
 
-rem Finally, we can cross compile Zig itself, with Zig.
-cd "%ROOTDIR%\zig"
-%ZIG% build ^
-  --prefix "%ROOTDIR%%OUTDIR%\zig-%TARGET%-%MCPU%" ^
-  --search-prefix "%ROOTDIR%%OUTDIR%\%TARGET%-%MCPU%" ^
-  -Dflat ^
-  -Dstatic-llvm ^
-  -Doptimize=ReleaseFast ^
-  -Dstrip ^
-  -Dtarget="%TARGET%" ^
-  -Dcpu="%MCPU%" ^
-  -Dversion-string="%ZIG_VERSION%"
-if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
+rem Here we would just compile roc if we had a roc release.
+rem Instead, for now, we just distribute our llvm deps from this repo.
+rem cd "%ROOTDIR%\zig"
+rem %ZIG% build ^
+rem   --prefix "%ROOTDIR%%OUTDIR%\%TARGET%-%MCPU%\zig" ^
+rem   --search-prefix "%ROOTDIR%%OUTDIR%\%TARGET%-%MCPU%" ^
+rem   -Dflat ^
+rem   -Dstatic-llvm ^
+rem   -Doptimize=ReleaseFast ^
+rem   -Dstrip ^
+rem   -Dtarget="%TARGET%" ^
+rem   -Dcpu="%MCPU%" ^
+rem   -Dversion-string="%ZIG_VERSION%"
+rem if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
 
 popd

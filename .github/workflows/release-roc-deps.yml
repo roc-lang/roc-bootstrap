@@ -1,0 +1,80 @@
+name: Build and Release Roc Dependencies
+on:
+  push:
+    tags:
+      - "zig-*"
+
+# Do not add permissions here! Configure them at the job level!
+permissions: {}
+
+jobs:
+  create-draft-release:
+    name: Create Release Draft
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create Release Draft
+        uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # ratchet:softprops/action-gh-release@v2
+        with:
+          name: "Roc Deps with ${{ github.ref_name }}"
+          draft: true
+
+  build:
+    needs: [create-draft-release]
+    name: Build and Release Roc Dependencies
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - aarch64-linux-musl
+          - aarch64-macos-none
+          - aarch64-windows-gnu
+          - arm-linux-musleabihf
+          - x86-linux-musl
+          - x86_64-linux-musl
+          - x86_64-macos-none
+          - x86_64-windows-gnu
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # ratchet:actions/checkout@v5
+
+      - name: Install Ninja
+        run: |
+          sudo apt install -y ninja-build
+
+      - name: Build Deps
+        env:
+          CMAKE_GENERATOR: Ninja
+        run: |
+          ./build ${{ matrix.target }} baseline || ./build ${{ matrix.target }} baseline
+          mv out/${{ matrix.target }}-baseline out/${{ matrix.target }}
+
+      - name: Archive Deps (Unix)
+        if: ${{ !contains(matrix.target, 'windows') }}
+        run: |
+          tar -cf - -C out ${{ matrix.target }} | xz -9e -v -c - > out/${{ matrix.target }}.tar.xz
+
+      - name: Upload Release Artifact (Unix)
+        if: ${{ !contains(matrix.target, 'windows') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload ${{ github.ref_name }} out/${{ matrix.target }}.tar.xz
+
+      - name: Archive Deps (Windows)
+        if: ${{ contains(matrix.target, 'windows') }}
+        run: |
+          (cd out && zip -r -9 ${{ matrix.target }}.zip ${{ matrix.target }})
+
+      - name: Upload Release Artifact (Windows)
+        if: ${{ contains(matrix.target, 'windows') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload ${{ github.ref_name }} out/${{ matrix.target }}.zip
+
