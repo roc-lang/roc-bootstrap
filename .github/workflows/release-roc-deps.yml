@@ -23,14 +23,14 @@ jobs:
       fail-fast: false
       matrix:
         target:
-        - aarch64-linux-musl
+        # - aarch64-linux-musl
         - aarch64-macos-none
-        - aarch64-windows-gnu
-        - arm-linux-musleabi
-        - i386-linux-musl
+        # - aarch64-windows-gnu
+        # - arm-linux-musleabi
+        # - i386-linux-musl
         - x86_64-linux-musl
-        - x86_64-macos-none
-        - x86_64-windows-gnu
+        # - x86_64-macos-none
+        # - x86_64-windows-gnu
 
     steps:
       - name: Checkout Code
