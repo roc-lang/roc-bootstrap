@@ -1,0 +1,44 @@
+name: Build and Release Roc Dependencies
+on:
+  push:
+    tags:
+    - "zig-v*"
+
+jobs:
+  build:
+    name: Build and Release Roc Dependencies
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        target:
+        - aarch64-macos-none
+        - x86_64-macos-none
+        - aarch64-linux-musl
+        - arm-linux-musleabi
+        - i386-linux-musl
+        - x86_64-linux-musl
+        - aarch64-windows-gnu
+        - x86_64-windows-gnu
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # This is just a dummy for now to test the flow
+      - name: Build Deps
+        run: mkdir -p out/${{ matrix.target }}-baseline
+
+      # TODO: switch to zip on windows targets
+      - name: Archive Deps
+        run: |
+          mv out/${{ matrix.target }}-baseline out/${{ matrix.target }}
+          tar -cf - -C out ${{ matrix.target }} | xz -9e -v -c - > out/${{ matrix.target }}.tar.xz
+
+      - name: Create Release Draft
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Roc Deps with ${{ github.ref_name }}"
+          draft: true
+          files: out/${{ matrix.target }}.tar.xz
+
