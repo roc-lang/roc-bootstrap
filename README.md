@@ -1,7 +1,18 @@
-# bootstrap-zig
+# roc-bootstrap
 
 The purpose of this project is to start with minimum system dependencies and
-end with a fully operational Zig compiler for any target.
+end with a fully operational Roc compiler for any target.
+
+Fundamentally, this project is a fork of the great work from [zig-bootstrap](https://github.com/ziglang/zig-bootstrap).
+Now that Roc is written in Zig, we have an equivalent core dependency tree.
+
+Eventually, this project will be used for cross compiling Roc releases to all supported targets.
+For now, this project is planned as a way to stage all of Roc's dependencies for easy download.
+This will make is so with the download of a single archive, anyone can start building Roc.
+On top of that, this is any easy place to host llvm builds for download.
+
+Until Roc has a verioned released, this repo will not vendor and build Roc.
+It will just vendor and build the deps for compiling Roc.
 
 ## Version Information
 
@@ -78,6 +89,9 @@ build.bat <arch>-<os>-<abi> <mcpu>
 To build for x86 Windows, run the script within the `x86 Native Tools Command Prompt for VS 2019`.
 
 ### Supported Triples
+
+> Note: Roc does not support as many targets as Zig.
+So this list is probably overly zealous in terms of support. Though theoretically, roc should run on anything zig can compile it to.
 
 If you try a "not tested" one and find a problem please file an issue,
 and a pull request linking to the issue in the table.
