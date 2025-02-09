@@ -255,13 +255,18 @@ cmake "%ROOTDIR%/llvm" ^
   -DCLANG_TOOL_LIBCLANG_BUILD=OFF ^
   %ZLIB_LIBRARY%
 if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
-cmake --build . %JOBS_ARG% --target install
+rem For compiling AFLplusplus easly, also build llvm-config
+cmake --build . %JOBS_ARG% --target install llvm-config
+copy "%ROOTDIR%%OUTDIR%\build-llvm-%TARGET%-%MCPU%\bin\llvm-config" "%ROOTDIR%%OUTDIR%\%TARGET%-%MCPU%\bin\llvm-config"
+
 if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
 
-rem Finally, we can cross compile Zig itself, with Zig.
+rem Here we would just compile roc if we had a roc release.
+rem Instead, for now, we still compile zig cause it is a dependency for compiling Roc on a system.
+rem This will make our bootstrap archive contain everything required to compile roc on a system.
 cd "%ROOTDIR%\zig"
 %ZIG% build ^
-  --prefix "%ROOTDIR%%OUTDIR%\zig-%TARGET%-%MCPU%" ^
+  --prefix "%ROOTDIR%%OUTDIR%\%TARGET%-%MCPU%\zig" ^
   --search-prefix "%ROOTDIR%%OUTDIR%\%TARGET%-%MCPU%" ^
   -Dflat ^
   -Dstatic-llvm ^
