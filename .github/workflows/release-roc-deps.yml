@@ -2,10 +2,21 @@ name: Build and Release Roc Dependencies
 on:
   push:
     tags:
-    - "zig-v*"
+    - "zig-*"
 
 jobs:
+  create-draft-release:
+    name: Create Release Draft
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create Release Draft
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Roc Deps with ${{ github.ref_name }}"
+          draft: true
+
   build:
+    needs: create-draft-release
     name: Build and Release Roc Dependencies
     runs-on: ubuntu-latest
     strategy:
@@ -27,7 +38,8 @@ jobs:
 
       # This is just a dummy for now to test the flow
       - name: Build Deps
-        run: mkdir -p out/${{ matrix.target }}-baseline
+        run: |
+          mkdir -p out/${{ matrix.target }}-baseline
 
       # TODO: switch to zip on windows targets
       - name: Archive Deps
@@ -35,10 +47,7 @@ jobs:
           mv out/${{ matrix.target }}-baseline out/${{ matrix.target }}
           tar -cf - -C out ${{ matrix.target }} | xz -9e -v -c - > out/${{ matrix.target }}.tar.xz
 
-      - name: Create Release Draft
-        uses: softprops/action-gh-release@v2
-        with:
-          name: "Roc Deps with ${{ github.ref_name }}"
-          draft: true
-          files: out/${{ matrix.target }}.tar.xz
+      - name: Upload Release Artifact
+        run: |
+          gh release upload ${{ github.ref_name }} out/${{ matrix.target }}.tar.xz
 
