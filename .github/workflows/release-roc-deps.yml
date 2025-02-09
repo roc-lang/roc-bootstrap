@@ -48,6 +48,8 @@ jobs:
           tar -cf - -C out ${{ matrix.target }} | xz -9e -v -c - > out/${{ matrix.target }}.tar.xz
 
       - name: Upload Release Artifact
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload ${{ github.ref_name }} out/${{ matrix.target }}.tar.xz
 
