@@ -15,31 +15,58 @@ jobs:
           name: "Roc Deps with ${{ github.ref_name }}"
           draft: true
 
-  build:
-    needs: create-draft-release
+  build-host:
+    name: Build and Cache Host Dependencies
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Build Host Deps
+        run: |
+          # ./build host-only
+          # dummy just for testing
+          mkdir -p out/host/yay
+
+      - name: Cache Host Deps
+        uses: actions/cache/save@v4
+        with:
+          key: "roc-host-deps-${{ github.run_id }}"
+          path: out
+
+  build-cross:
+    needs: [create-draft-release, build-host]
     name: Build and Release Roc Dependencies
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         target:
-        # - aarch64-linux-musl
+        - aarch64-linux-musl
         - aarch64-macos-none
-        # - aarch64-windows-gnu
-        # - arm-linux-musleabi
-        # - i386-linux-musl
+        - aarch64-windows-gnu
+        - arm-linux-musleabi
+        - i386-linux-musl
         - x86_64-linux-musl
-        # - x86_64-macos-none
-        # - x86_64-windows-gnu
+        - x86_64-macos-none
+        - x86_64-windows-gnu
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # This is just a dummy for now to test the flow
+      - name: Restore Host Deps
+        uses: actions/cache/restore@v4
+        with:
+          key: "roc-host-deps-${{ github.run_id }}"
+          path: out
+
       - name: Build Deps
         run: |
-          ./build ${{ matrix.target }} baseline
+          # ./build ${{ matrix.target }} baseline
+          # dummy just for testing
+          mkdir -p out/${{ matrix.target }}-baseline/yay
           mv out/${{ matrix.target }}-baseline out/${{ matrix.target }}
 
       - name: Archive Deps (Unix)
