@@ -25,9 +25,7 @@ jobs:
 
       - name: Build Host Deps
         run: |
-          # ./build host-only
-          # dummy just for testing
-          mkdir -p out/host/yay
+          ./build host-only
 
       - name: Cache Host Deps
         uses: actions/cache/save@v4
@@ -60,13 +58,12 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           key: "roc-host-deps-${{ github.run_id }}"
+          fail-on-cache-miss: true
           path: out
 
       - name: Build Deps
         run: |
-          # ./build ${{ matrix.target }} baseline
-          # dummy just for testing
-          mkdir -p out/${{ matrix.target }}-baseline/yay
+          ./build ${{ matrix.target }} baseline
           mv out/${{ matrix.target }}-baseline out/${{ matrix.target }}
 
       - name: Archive Deps (Unix)
