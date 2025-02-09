@@ -20,7 +20,7 @@ jobs:
     name: Build and Release Roc Dependencies
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         target:
         - aarch64-macos-none
