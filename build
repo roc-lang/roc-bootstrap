@@ -70,7 +70,7 @@ cmake --build . --target install
 # In order to share work, enable early existing after building the host.
 # In CI, one worker can build the host targets.
 # Then each cross compilation worker can share the host work.
-if [ "${TARGET}" == "host-only" ]; then
+if [ "${TARGET}" = "host-only" ]; then
   exit 0
 fi
 
