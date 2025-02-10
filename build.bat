@@ -262,19 +262,18 @@ copy "%ROOTDIR%%OUTDIR%\build-llvm-%TARGET%-%MCPU%\bin\llvm-config" "%ROOTDIR%%O
 if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
 
 rem Here we would just compile roc if we had a roc release.
-rem Instead, for now, we still compile zig cause it is a dependency for compiling Roc on a system.
-rem This will make our bootstrap archive contain everything required to compile roc on a system.
-cd "%ROOTDIR%\zig"
-%ZIG% build ^
-  --prefix "%ROOTDIR%%OUTDIR%\%TARGET%-%MCPU%\zig" ^
-  --search-prefix "%ROOTDIR%%OUTDIR%\%TARGET%-%MCPU%" ^
-  -Dflat ^
-  -Dstatic-llvm ^
-  -Doptimize=ReleaseFast ^
-  -Dstrip ^
-  -Dtarget="%TARGET%" ^
-  -Dcpu="%MCPU%" ^
-  -Dversion-string="%ZIG_VERSION%"
-if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
+rem Instead, for now, we just distribute our llvm deps from this repo.
+rem cd "%ROOTDIR%\zig"
+rem %ZIG% build ^
+rem   --prefix "%ROOTDIR%%OUTDIR%\%TARGET%-%MCPU%\zig" ^
+rem   --search-prefix "%ROOTDIR%%OUTDIR%\%TARGET%-%MCPU%" ^
+rem   -Dflat ^
+rem   -Dstatic-llvm ^
+rem   -Doptimize=ReleaseFast ^
+rem   -Dstrip ^
+rem   -Dtarget="%TARGET%" ^
+rem   -Dcpu="%MCPU%" ^
+rem   -Dversion-string="%ZIG_VERSION%"
+rem if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
 
 popd
