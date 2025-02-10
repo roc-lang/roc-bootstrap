@@ -257,8 +257,13 @@ cmake "%ROOTDIR%/llvm" ^
 if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
 rem For compiling AFLplusplus easly, also build llvm-config
 cmake --build . %JOBS_ARG% --target install llvm-config
-copy "%ROOTDIR%%OUTDIR%\build-llvm-%TARGET%-%MCPU%\bin\llvm-config" "%ROOTDIR%%OUTDIR%\%TARGET%-%MCPU%\bin\llvm-config"
+if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
 
+copy "%ROOTDIR%%OUTDIR%\build-llvm-%TARGET%-%MCPU%\bin\llvm-config*" "%ROOTDIR%%OUTDIR%\%TARGET%-%MCPU%\bin\llvm-config"
+if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
+
+# Also note anchoring zig version in output
+echo $ZIG_VERSION > "%ROOTDIR%%OUTDIR%\%TARGET%-%MCPU%\bin\version.txt"
 if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
 
 rem Here we would just compile roc if we had a roc release.
