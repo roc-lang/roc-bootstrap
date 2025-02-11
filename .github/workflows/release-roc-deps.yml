@@ -23,7 +23,13 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Install Ninja
+        run: |
+          sudo apt install ninja
+
       - name: Build Host Deps
+        env:
+          CMAKE_GENERATOR: Ninja
         run: |
           ./build-host
 
@@ -61,7 +67,13 @@ jobs:
           fail-on-cache-miss: true
           path: out
 
+      - name: Install Ninja
+        run: |
+          sudo apt install ninja
+
       - name: Build Deps
+        env:
+          CMAKE_GENERATOR: Ninja
         run: |
           ./build-cross ${{ matrix.target }} baseline
           mv out/${{ matrix.target }}-baseline out/${{ matrix.target }}
