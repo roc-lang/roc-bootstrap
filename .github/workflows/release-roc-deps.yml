@@ -15,26 +15,28 @@ jobs:
   #         name: "Roc Deps with ${{ github.ref_name }}"
   #         draft: true
 
-  # build-host:
-  #   name: Build and Cache Host Dependencies
-  #   runs-on: ubuntu-latest
+  build-host:
+    name: Build and Cache Host Dependencies
+    runs-on: ubuntu-latest
 
-  #   steps:
-  #     - name: Checkout Code
-  #       uses: actions/checkout@v4
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-  #     - name: Build Host Deps
-  #       run: |
-  #         ./build host-only
+      - name: Build Host Deps
+        run: |
+          # ./build host-only
+          mkdir -p out/host
+          echo "yay" > out/host/yay
 
-  #     - name: Cache Host Deps
-  #       uses: actions/cache/save@v4
-  #       with:
-  #         key: "roc-host-deps-${{ github.run_id }}"
-  #         path: out
+      - name: Cache Host Deps
+        uses: actions/cache/save@v4
+        with:
+          key: "roc-host-deps-${{ github.run_id }}"
+          path: out
 
   build-cross:
-    # needs: [create-draft-release, build-host]
+    needs: [build-host]
     name: Build and Release Roc Dependencies
     runs-on: ubuntu-latest
     strategy:
@@ -57,7 +59,7 @@ jobs:
       - name: Restore Host Deps
         uses: actions/cache/restore@v4
         with:
-          key: "roc-host-deps-13245768548"
+          key: "roc-host-deps-${{ github.run_id }}"
           fail-on-cache-miss: true
           path: out
 
@@ -65,7 +67,9 @@ jobs:
         run: |
           # ./build ${{ matrix.target }} baseline
           ls out
+          cat out/host/yay
           mkdir -p out/${{ matrix.target }}-baseline
+          mv out/host/yay out/${{ matrix.target }}-baseline/yay
           mv out/${{ matrix.target }}-baseline out/${{ matrix.target }}
 
       - name: Archive Deps (Unix)
