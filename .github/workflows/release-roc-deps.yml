@@ -31,7 +31,7 @@ jobs:
         env:
           CMAKE_GENERATOR: Ninja
         run: |
-          ./build-host
+          ./build host-only
 
       - name: Cache Host Deps
         uses: actions/cache/save@v4
@@ -75,7 +75,7 @@ jobs:
         env:
           CMAKE_GENERATOR: Ninja
         run: |
-          ./build-cross ${{ matrix.target }} baseline
+          ./build ${{ matrix.target }} baseline
           mv out/${{ matrix.target }}-baseline out/${{ matrix.target }}
 
       - name: Archive Deps (Unix)
