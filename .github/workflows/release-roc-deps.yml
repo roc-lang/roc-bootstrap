@@ -25,7 +25,7 @@ jobs:
 
       - name: Build Host Deps
         run: |
-          ./build host-only
+          ./build-host
 
       - name: Cache Host Deps
         uses: actions/cache/save@v4
@@ -63,7 +63,7 @@ jobs:
 
       - name: Build Deps
         run: |
-          ./build ${{ matrix.target }} baseline
+          ./build-cross ${{ matrix.target }} baseline
           mv out/${{ matrix.target }}-baseline out/${{ matrix.target }}
 
       - name: Archive Deps (Unix)
