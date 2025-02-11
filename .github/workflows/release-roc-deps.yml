@@ -26,8 +26,9 @@ jobs:
         - aarch64-linux-musl
         - aarch64-macos-none
         - aarch64-windows-gnu
-        - arm-linux-musleabi
-        - i386-linux-musl
+        # TODO: re-enable with 0.14.0, broken in 0.13.0
+        # - arm-linux-musleabi
+        - x86-linux-musl
         - x86_64-linux-musl
         - x86_64-macos-none
         - x86_64-windows-gnu
