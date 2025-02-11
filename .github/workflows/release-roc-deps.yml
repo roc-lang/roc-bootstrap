@@ -45,7 +45,7 @@ jobs:
         env:
           CMAKE_GENERATOR: Ninja
         run: |
-          ./build ${{ matrix.target }} baseline
+          ./build ${{ matrix.target }} baseline || ./build ${{ matrix.target }} baseline
           mv out/${{ matrix.target }}-baseline out/${{ matrix.target }}
 
       - name: Archive Deps (Unix)
