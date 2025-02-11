@@ -15,32 +15,8 @@ jobs:
           name: "Roc Deps with ${{ github.ref_name }}"
           draft: true
 
-  build-host:
-    name: Build and Cache Host Dependencies
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Install Ninja
-        run: |
-          sudo apt install -y ninja-build
-
-      - name: Build Host Deps
-        env:
-          CMAKE_GENERATOR: Ninja
-        run: |
-          ./build host-only
-
-      - name: Cache Host Deps
-        uses: actions/cache/save@v4
-        with:
-          key: "roc-host-deps-${{ github.run_id }}"
-          path: out
-
-  build-cross:
-    needs: [create-draft-release, build-host]
+  build:
+    needs: [create-draft-release]
     name: Build and Release Roc Dependencies
     runs-on: ubuntu-latest
     strategy:
@@ -59,13 +35,6 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-
-      - name: Restore Host Deps
-        uses: actions/cache/restore@v4
-        with:
-          key: "roc-host-deps-${{ github.run_id }}"
-          fail-on-cache-miss: true
-          path: out
 
       - name: Install Ninja
         run: |
