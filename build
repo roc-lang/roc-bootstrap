@@ -188,7 +188,7 @@ cmake "$ROOTDIR/llvm" \
   -DLLD_BUILD_TOOLS=OFF
 # For compiling AFLplusplus easly, also build llvm-config
 cmake --build . --target install llvm-config
-cp $ROOTDIR/out/build-llvm-$TARGET-$MCPU/bin/llvm-config* $ROOTDIR/out/$TARGET-$MCPU/bin/llvm-config
+cp $ROOTDIR/out/build-llvm-$TARGET-$MCPU/bin/llvm-config* $ROOTDIR/out/$TARGET-$MCPU/bin/
 
 # Also note anchoring zig version in output
 echo $ZIG_VERSION > $ROOTDIR/out/$TARGET-$MCPU/version.txt
