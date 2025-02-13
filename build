@@ -186,12 +186,7 @@ cmake "$ROOTDIR/llvm" \
   -DCLANG_TOOL_LIBCLANG_BUILD=OFF \
   -DLIBCLANG_BUILD_STATIC=ON \
   -DLLD_BUILD_TOOLS=OFF
-# For compiling AFLplusplus easly, also build llvm-config
-cmake --build . --target install llvm-config
-cp $ROOTDIR/out/build-llvm-$TARGET-$MCPU/bin/llvm-config* $ROOTDIR/out/$TARGET-$MCPU/bin/
-
-# Also note anchoring zig version in output
-echo $ZIG_VERSION > $ROOTDIR/out/$TARGET-$MCPU/version.txt
+cmake --build . --target install
 
 # Here we would just compile roc if we had a roc release.
 # Instead, for now, we just distribute our llvm deps from this repo.
