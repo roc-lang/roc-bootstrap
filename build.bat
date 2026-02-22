@@ -153,6 +153,7 @@ cd "%ROOTDIR%%OUTDIR%\%TARGET%-%MCPU%\lib"
   --name zstd ^
   -target %TARGET% ^
   -mcpu=%MCPU% ^
+  -fno-sanitize-c ^
   -fstrip ^
   -OReleaseFast ^
   -lc ^

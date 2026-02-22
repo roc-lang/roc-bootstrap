@@ -99,7 +99,7 @@ $ZIG build-lib \
   --name zstd \
   -target $TARGET \
   -mcpu=$MCPU \
-  -fstrip -OReleaseFast \
+  -fno-sanitize-c -fstrip -OReleaseFast \
   -lc \
   "$ROOTDIR/zstd/lib/decompress/zstd_ddict.c" \
   "$ROOTDIR/zstd/lib/decompress/zstd_decompress.c" \
