@@ -185,13 +185,10 @@ endif()
 include_directories(BEFORE
   ${CMAKE_CURRENT_BINARY_DIR}/include
   ${CMAKE_CURRENT_SOURCE_DIR}/include
-  ${CMAKE_CURRENT_SOURCE_DIR}/../zig/lib/libunwind/include
   )
 
 add_subdirectory(Common)
-if(LLD_BUILD_TOOLS)
-  add_subdirectory(tools/lld)
-endif()
+add_subdirectory(tools/lld)
 
 if (LLVM_INCLUDE_TESTS)
   add_custom_target(LLDUnitTests)
@@ -202,6 +199,7 @@ if (LLVM_INCLUDE_TESTS)
   add_subdirectory(test)
 endif()
 
+add_subdirectory(docs)
 add_subdirectory(COFF)
 add_subdirectory(ELF)
 add_subdirectory(MachO)

@@ -2266,7 +2266,7 @@ bool UnwrappedLineParser::tryToParseLambda() {
   if (!tryToParseLambdaIntroducer())
     return false;
 
-  bool SeenArrow = false;
+  FormatToken *Arrow = nullptr;
   bool InTemplateParameterList = false;
 
   while (FormatTok->isNot(tok::l_brace)) {
@@ -2341,17 +2341,13 @@ bool UnwrappedLineParser::tryToParseLambda() {
     case tok::ellipsis:
     case tok::kw_true:
     case tok::kw_false:
-      if (SeenArrow || InTemplateParameterList) {
+      if (Arrow || InTemplateParameterList) {
         nextToken();
         break;
       }
       return true;
     case tok::arrow:
-      // This might or might not actually be a lambda arrow (this could be an
-      // ObjC method invocation followed by a dereferencing arrow). We might
-      // reset this back to TT_Unknown in TokenAnnotator.
-      FormatTok->setFinalizedType(TT_LambdaArrow);
-      SeenArrow = true;
+      Arrow = FormatTok;
       nextToken();
       break;
     case tok::kw_requires: {
@@ -2373,6 +2369,9 @@ bool UnwrappedLineParser::tryToParseLambda() {
   FormatTok->setFinalizedType(TT_LambdaLBrace);
   LSquare.setFinalizedType(TT_LambdaLSquare);
 
+  if (Arrow)
+    Arrow->setFinalizedType(TT_LambdaArrow);
+
   NestedLambdas.push_back(Line->SeenDecltypeAuto);
   parseChildBlock();
   assert(!NestedLambdas.empty());
@@ -2386,20 +2385,22 @@ bool UnwrappedLineParser::tryToParseLambdaIntroducer() {
   const FormatToken *LeftSquare = FormatTok;
   nextToken();
   if (Previous) {
-    if (Previous->Tok.getIdentifierInfo() &&
-        !Previous->isOneOf(tok::kw_return, tok::kw_co_await, tok::kw_co_yield,
-                           tok::kw_co_return)) {
+    const auto *PrevPrev = Previous->getPreviousNonComment();
+    if (Previous->is(tok::star) && PrevPrev && PrevPrev->isTypeName(LangOpts))
       return false;
-    }
     if (Previous->closesScope()) {
       // Not a potential C-style cast.
       if (Previous->isNot(tok::r_paren))
         return false;
-      const auto *BeforeRParen = Previous->getPreviousNonComment();
       // Lambdas can be cast to function types only, e.g. `std::function<int()>`
       // and `int (*)()`.
-      if (!BeforeRParen || !BeforeRParen->isOneOf(tok::greater, tok::r_paren))
+      if (!PrevPrev || !PrevPrev->isOneOf(tok::greater, tok::r_paren))
         return false;
+    }
+    if (Previous && Previous->Tok.getIdentifierInfo() &&
+        !Previous->isOneOf(tok::kw_return, tok::kw_co_await, tok::kw_co_yield,
+                           tok::kw_co_return)) {
+      return false;
     }
   }
   if (LeftSquare->isCppStructuredBinding(IsCpp))
