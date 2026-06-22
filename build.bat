@@ -259,6 +259,35 @@ cmake "%ROOTDIR%/llvm" ^
   %ZLIB_LIBRARY%
 if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
 cmake --build . %JOBS_ARG% --target install
+if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
+
+rem Cross compile Binaryen for the target
+mkdir "%ROOTDIR%%OUTDIR%\build-binaryen-%TARGET%-%MCPU%"
+cd "%ROOTDIR%%OUTDIR%\build-binaryen-%TARGET%-%MCPU%"
+cmake "%ROOTDIR%/binaryen" ^
+  -G "Ninja" ^
+  -DCMAKE_INSTALL_PREFIX="%ROOTDIR_CMAKE%%OUTDIR%/%TARGET%-%MCPU%" ^
+  -DCMAKE_PREFIX_PATH="%ROOTDIR_CMAKE%%OUTDIR%/%TARGET%-%MCPU%" ^
+  -DCMAKE_BUILD_TYPE=Release ^
+  -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded ^
+  -DCMAKE_CROSSCOMPILING=True ^
+  -DCMAKE_SYSTEM_NAME="%TARGET_OS_CMAKE%" ^
+  -DCMAKE_C_COMPILER="%ZIG%;cc;-fno-sanitize=all;-fno-stack-protector;-s;-g0;-target;%TARGET%;-mcpu=%MCPU%" ^
+  -DCMAKE_CXX_COMPILER="%ZIG%;c++;-fno-sanitize=all;-fno-stack-protector;-s;-g0;-target;%TARGET%;-mcpu=%MCPU%" ^
+  -DCMAKE_ASM_COMPILER="%ZIG%;cc;-fno-sanitize=all;-fno-stack-protector;-s;-g0;-target;%TARGET%;-mcpu=%MCPU%" ^
+  -DCMAKE_RC_COMPILER="%ROOTDIR_CMAKE%%OUTDIR%/host/bin/llvm-rc.exe" ^
+  -DCMAKE_AR="%ROOTDIR_CMAKE%%OUTDIR%/host/bin/llvm-ar.exe" ^
+  -DCMAKE_RANLIB="%ROOTDIR_CMAKE%%OUTDIR%/host/bin/llvm-ranlib.exe" ^
+  -DBUILD_TOOLS=OFF ^
+  -DBUILD_TESTS=OFF ^
+  -DBUILD_FUZZTEST=OFF ^
+  -DBUILD_SHARED_LIBS=OFF ^
+  -DBUILD_LLVM_DWARF=OFF ^
+  -DBUILD_MIMALLOC=OFF ^
+  -DINSTALL_LIBS=ON
+if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
+cmake --build . %JOBS_ARG% --target install
+if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
 
 rem Here we would just compile roc if we had a roc release.
 rem Instead, for now, we just distribute our llvm deps from this repo.

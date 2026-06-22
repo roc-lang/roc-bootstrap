@@ -193,6 +193,30 @@ cmake "$ROOTDIR/llvm" \
   -DLLD_BUILD_TOOLS=OFF
 cmake --build . --target install
 
+mkdir -p "$ROOTDIR/out/build-binaryen-$TARGET-$MCPU"
+cd "$ROOTDIR/out/build-binaryen-$TARGET-$MCPU"
+cmake "$ROOTDIR/binaryen" \
+  -DCMAKE_INSTALL_PREFIX="$ROOTDIR/out/$TARGET-$MCPU" \
+  -DCMAKE_PREFIX_PATH="$ROOTDIR/out/$TARGET-$MCPU" \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_CROSSCOMPILING=True \
+  -DCMAKE_SYSTEM_NAME="$TARGET_OS_CMAKE" \
+  -DCMAKE_C_COMPILER="$ZIG;cc;-fno-sanitize=all;-s;-g0;-target;$TARGET;-mcpu=$MCPU" \
+  -DCMAKE_CXX_COMPILER="$ZIG;c++;-fno-sanitize=all;-s;-g0;-target;$TARGET;-mcpu=$MCPU" \
+  -DCMAKE_ASM_COMPILER="$ZIG;cc;-fno-sanitize=all;-s;-g0;-target;$TARGET;-mcpu=$MCPU" \
+  -DCMAKE_LINK_DEPENDS_USE_LINKER=OFF \
+  -DCMAKE_RC_COMPILER="$ROOTDIR/out/host/bin/llvm-rc" \
+  -DCMAKE_AR="$ROOTDIR/out/host/bin/llvm-ar" \
+  -DCMAKE_RANLIB="$ROOTDIR/out/host/bin/llvm-ranlib" \
+  -DBUILD_TOOLS=OFF \
+  -DBUILD_TESTS=OFF \
+  -DBUILD_FUZZTEST=OFF \
+  -DBUILD_SHARED_LIBS=OFF \
+  -DBUILD_LLVM_DWARF=OFF \
+  -DBUILD_MIMALLOC=OFF \
+  -DINSTALL_LIBS=ON
+cmake --build . --target install
+
 # Here we would just compile roc if we had a roc release.
 # Instead, for now, we just distribute our llvm deps from this repo.
 # cd "$ROOTDIR/zig"
