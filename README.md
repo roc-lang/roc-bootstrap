@@ -20,6 +20,7 @@ This repository copies sources from upstream. Patches listed below. Use git
 to find and inspect the patch diffs.
 
  * LLVM, LLD, Clang 21.1.0
+ * Binaryen 130
  * zlib 1.3.1
  * zstd 1.5.2
  * zig 0.16.0
@@ -40,6 +41,8 @@ For other versions, check the git tags of this repository.
  * LLD: Respect `LLD_BUILD_TOOLS=OFF`
  * LLD: Skip building docs
  * LLD: OpenBSD `findMajMinShlib()` logic
+ * Binaryen: Disable LLVM DWARF support.
+ * Binaryen: Disable the outlining pass and its LLVM suffix-tree dependency.
  * zlib: Delete the ability to build a shared library.
 
 ## Host System Dependencies
