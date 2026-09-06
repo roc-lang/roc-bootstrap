@@ -801,36 +801,44 @@ void LiveRange::flushSegmentSet() {
 }
 
 bool LiveRange::isLiveAtIndexes(ArrayRef<SlotIndex> Slots) const {
-  ArrayRef<SlotIndex>::iterator SlotI = Slots.begin();
-  ArrayRef<SlotIndex>::iterator SlotE = Slots.end();
-
-  // If there are no regmask slots, we have nothing to search.
-  if (SlotI == SlotE)
+  if (Slots.empty() || empty())
     return false;
 
-  // Start our search at the first segment that ends after the first slot.
-  const_iterator SegmentI = find(*SlotI);
-  const_iterator SegmentE = end();
+  // Search only as far as the next relevant position. Exponentially bounded
+  // searches skip long holes logarithmically while keeping adjacent positions
+  // constant-time; a full-range binary search at every hole would turn dense,
+  // interleaved inputs from a linear walk into O(N log N) work.
+  auto SkipWhile = [](auto First, auto Last, auto Pred) {
+    typename std::iterator_traits<decltype(First)>::difference_type Step = 1;
+    while (First != Last) {
+      auto Bound = First + std::min(Step, Last - First);
+      if (!Pred(*(Bound - 1)))
+        return std::partition_point(First, Bound, Pred);
+      First = Bound;
+      auto Remaining = Last - First;
+      Step = Step > Remaining / 2 ? Remaining : Step * 2;
+    }
+    return First;
+  };
 
-  // If there are no segments that end after the first slot, we're done.
-  if (SegmentI == SegmentE)
+  // Locate the initial candidates in the complete sorted domains once.
+  auto SlotI = Slots.begin();
+  auto SegmentI = find(*SlotI);
+  if (SegmentI == end())
     return false;
-
-  // Look for each slot in the live range.
-  for ( ; SlotI != SlotE; ++SlotI) {
-    // Go to the next segment that ends after the current slot.
-    // The slot may be within a hole in the range.
-    SegmentI = advanceTo(SegmentI, *SlotI);
-    if (SegmentI == SegmentE)
-      return false;
-
-    // If this segment contains the slot, we're done.
-    if (SegmentI->contains(*SlotI))
+  if (*SlotI < SegmentI->start)
+    SlotI = std::lower_bound(SlotI, Slots.end(), SegmentI->start);
+  while (SlotI != Slots.end() && SegmentI != end()) {
+    if (*SlotI < SegmentI->start) {
+      SlotI = SkipWhile(SlotI, Slots.end(),
+                        [&](SlotIndex S) { return S < SegmentI->start; });
+    } else if (*SlotI >= SegmentI->end) {
+      SegmentI = SkipWhile(SegmentI, end(),
+                           [&](const Segment &S) { return S.end <= *SlotI; });
+    } else {
       return true;
-    // Otherwise, look for the next slot.
+    }
   }
-
-  // We didn't find a segment containing any of the slots.
   return false;
 }
 

@@ -1917,10 +1917,11 @@ public:
     CompressEntryToData.clear();
     ExternalUses.clear();
     ExternalUsesAsOriginalScalar.clear();
-    for (auto &Iter : BlocksSchedules) {
-      BlockScheduling *BS = Iter.second.get();
+    for (BlockScheduling *BS : ActiveBlocksSchedules) {
       BS->clear();
+      BS->IsActive = false;
     }
+    ActiveBlocksSchedules.clear();
     MinBWs.clear();
     ReductionBitWidth = 0;
     BaseGraphSize = 1;
@@ -4752,6 +4753,10 @@ private:
     BlockScheduling(BasicBlock *BB)
         : BB(BB), ChunkSize(BB->size()), ChunkPos(ChunkSize) {}
 
+    // Registered in ActiveBlocksSchedules once per tree, including failed
+    // scheduling attempts whose region state must also be cleared.
+    bool IsActive = false;
+
     void clear() {
       ScheduledBundles.clear();
       ScheduledBundlesList.clear();
@@ -5088,6 +5093,11 @@ private:
 
   /// Attaches the BlockScheduling structures to basic blocks.
   MapVector<BasicBlock *, std::unique_ptr<BlockScheduling>> BlocksSchedules;
+
+  // Only these schedules can contain state from the current tree. Retain the
+  // per-block allocations above, without visiting every previously seen block
+  // for each new tree.
+  SmallVector<BlockScheduling *> ActiveBlocksSchedules;
 
   /// Performs the "real" scheduling. Done before vectorization is actually
   /// performed in a basic block.
@@ -10295,6 +10305,10 @@ void BoUpSLP::buildTreeRec(ArrayRef<Value *> VLRef, unsigned Depth,
     BSRef = std::make_unique<BlockScheduling>(BB);
 
   BlockScheduling &BS = *BSRef;
+  if (!BS.IsActive) {
+    BS.IsActive = true;
+    ActiveBlocksSchedules.push_back(&BS);
+  }
 
   SetVector<Value *> UniqueValues(llvm::from_range, VL);
   std::optional<ScheduleBundle *> BundlePtr =
@@ -18612,8 +18626,8 @@ Value *BoUpSLP::vectorizeTree(
   // need to rebuild it.
   EntryToLastInstruction.clear();
   // All blocks must be scheduled before any instructions are inserted.
-  for (auto &BSIter : BlocksSchedules)
-    scheduleBlock(BSIter.second.get());
+  for (BlockScheduling *BS : ActiveBlocksSchedules)
+    scheduleBlock(BS);
   // Cache last instructions for the nodes to avoid side effects, which may
   // appear during vectorization, like extra uses, etc.
   for (const std::unique_ptr<TreeEntry> &TE : VectorizableTree) {
