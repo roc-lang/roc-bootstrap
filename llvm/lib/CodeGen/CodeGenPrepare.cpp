@@ -5796,13 +5796,20 @@ static BasicBlock::iterator findInsertPos(Value *Addr, Instruction *MemoryInst,
   // Either completed search establishes exactly the same earliest user.
   Instruction *Earliest = MemoryInst;
   auto Inst = MemoryInst->getParent()->begin();
+  auto Operand = Inst->op_begin();
   for (User *U : Addr->users()) {
     if (&*Inst == Earliest)
       return Inst;
-    if (!isa<PHINode>(*Inst) && !Inst->isDebugOrPseudoInst() &&
-        is_contained(Inst->operand_values(), Addr))
+    // Advance by one operand, not a whole instruction: a call or inline asm
+    // can itself have a large operand list. Neither search may do unbounded
+    // work before giving the other search its next step.
+    if (isa<PHINode>(*Inst) || Inst->isDebugOrPseudoInst() ||
+        Operand == Inst->op_end()) {
+      ++Inst;
+      Operand = Inst->op_begin();
+    } else if ((Operand++)->get() == Addr) {
       return Inst;
-    ++Inst;
+    }
     Instruction *UserInst = dyn_cast<Instruction>(U);
     if (UserInst && UserInst->getParent() == MemoryInst->getParent()) {
       if (isa<PHINode>(UserInst) || UserInst->isDebugOrPseudoInst())

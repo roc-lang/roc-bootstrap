@@ -804,20 +804,40 @@ bool LiveRange::isLiveAtIndexes(ArrayRef<SlotIndex> Slots) const {
   if (Slots.empty() || empty())
     return false;
 
+  // Search only as far as the next relevant position. Exponentially bounded
+  // searches skip long holes logarithmically while keeping adjacent positions
+  // constant-time; a full-range binary search at every hole would turn dense,
+  // interleaved inputs from a linear walk into O(N log N) work.
+  auto SkipWhile = [](auto First, auto Last, auto Pred) {
+    typename std::iterator_traits<decltype(First)>::difference_type Step = 1;
+    while (First != Last) {
+      auto Bound = First + std::min(Step, Last - First);
+      if (!Pred(*(Bound - 1)))
+        return std::partition_point(First, Bound, Pred);
+      First = Bound;
+      auto Remaining = Last - First;
+      Step = Step > Remaining / 2 ? Remaining : Step * 2;
+    }
+    return First;
+  };
+
+  // Locate the initial candidates in the complete sorted domains once.
   auto SlotI = Slots.begin();
-  const auto SlotE = Slots.end();
   auto SegmentI = find(*SlotI);
-  while (SegmentI != end()) {
-    // Regmask slots and live segments are both sorted. Skip the entire hole
-    // before this segment, rather than visiting every call in that hole for
-    // each virtual register whose live range starts later in the function.
-    if (*SlotI < SegmentI->start)
-      SlotI = std::lower_bound(SlotI, SlotE, SegmentI->start);
-    if (SlotI == SlotE)
-      return false;
-    if (*SlotI < SegmentI->end)
+  if (SegmentI == end())
+    return false;
+  if (*SlotI < SegmentI->start)
+    SlotI = std::lower_bound(SlotI, Slots.end(), SegmentI->start);
+  while (SlotI != Slots.end() && SegmentI != end()) {
+    if (*SlotI < SegmentI->start) {
+      SlotI = SkipWhile(SlotI, Slots.end(),
+                        [&](SlotIndex S) { return S < SegmentI->start; });
+    } else if (*SlotI >= SegmentI->end) {
+      SegmentI = SkipWhile(SegmentI, end(),
+                           [&](const Segment &S) { return S.end <= *SlotI; });
+    } else {
       return true;
-    SegmentI = find(*SlotI);
+    }
   }
   return false;
 }
