@@ -801,36 +801,24 @@ void LiveRange::flushSegmentSet() {
 }
 
 bool LiveRange::isLiveAtIndexes(ArrayRef<SlotIndex> Slots) const {
-  ArrayRef<SlotIndex>::iterator SlotI = Slots.begin();
-  ArrayRef<SlotIndex>::iterator SlotE = Slots.end();
-
-  // If there are no regmask slots, we have nothing to search.
-  if (SlotI == SlotE)
+  if (Slots.empty() || empty())
     return false;
 
-  // Start our search at the first segment that ends after the first slot.
-  const_iterator SegmentI = find(*SlotI);
-  const_iterator SegmentE = end();
-
-  // If there are no segments that end after the first slot, we're done.
-  if (SegmentI == SegmentE)
-    return false;
-
-  // Look for each slot in the live range.
-  for ( ; SlotI != SlotE; ++SlotI) {
-    // Go to the next segment that ends after the current slot.
-    // The slot may be within a hole in the range.
-    SegmentI = advanceTo(SegmentI, *SlotI);
-    if (SegmentI == SegmentE)
+  auto SlotI = Slots.begin();
+  const auto SlotE = Slots.end();
+  auto SegmentI = find(*SlotI);
+  while (SegmentI != end()) {
+    // Regmask slots and live segments are both sorted. Skip the entire hole
+    // before this segment, rather than visiting every call in that hole for
+    // each virtual register whose live range starts later in the function.
+    if (*SlotI < SegmentI->start)
+      SlotI = std::lower_bound(SlotI, SlotE, SegmentI->start);
+    if (SlotI == SlotE)
       return false;
-
-    // If this segment contains the slot, we're done.
-    if (SegmentI->contains(*SlotI))
+    if (*SlotI < SegmentI->end)
       return true;
-    // Otherwise, look for the next slot.
+    SegmentI = find(*SlotI);
   }
-
-  // We didn't find a segment containing any of the slots.
   return false;
 }
 

@@ -5790,9 +5790,19 @@ static BasicBlock::iterator findInsertPos(Value *Addr, Instruction *MemoryInst,
       return std::next(AddrInst->getIterator());
   }
 
-  // Find the first user of Addr in current BB.
+  // Find the first user in this block. Search the use list and the block
+  // together: a shared address may have many users in other blocks, while a
+  // large block may contain many instructions unrelated to this address.
+  // Either completed search establishes exactly the same earliest user.
   Instruction *Earliest = MemoryInst;
+  auto Inst = MemoryInst->getParent()->begin();
   for (User *U : Addr->users()) {
+    if (&*Inst == Earliest)
+      return Inst;
+    if (!isa<PHINode>(*Inst) && !Inst->isDebugOrPseudoInst() &&
+        is_contained(Inst->operand_values(), Addr))
+      return Inst;
+    ++Inst;
     Instruction *UserInst = dyn_cast<Instruction>(U);
     if (UserInst && UserInst->getParent() == MemoryInst->getParent()) {
       if (isa<PHINode>(UserInst) || UserInst->isDebugOrPseudoInst())

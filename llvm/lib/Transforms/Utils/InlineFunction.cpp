@@ -3263,11 +3263,49 @@ llvm::InlineResult llvm::InlineFunction(CallBase &CB, InlineFunctionInfo &IFI,
                                 CalledFunc->getName() + ".exit");
 
   } else { // It's a call
-    // If this is a call instruction, we need to split the basic block that
-    // the call lives in.
-    //
-    AfterCallBB = OrigBB->splitBasicBlock(CB.getIterator(),
-                                          CalledFunc->getName() + ".exit");
+    // Find the smaller instruction range without scanning the larger one.
+    // Moving the smaller side bounds repeated parent-pointer updates even when
+    // calls are inlined in a different order. Ties retain the original block.
+    auto SplitPoint = CB.getIterator();
+    auto Front = OrigBB->begin();
+    auto Back = OrigBB->end();
+    bool MovePrefix = true;
+    while (Front != SplitPoint) {
+      if (--Back == SplitPoint) {
+        MovePrefix = false;
+        break;
+      }
+      ++Front;
+    }
+    if (!MovePrefix) {
+      AfterCallBB = OrigBB->splitBasicBlock(
+          SplitPoint, CalledFunc->getName() + ".exit");
+    } else {
+      // Keep the suffix in its existing block and move the prefix. Inlining
+      // successive calls in a long block must not repeatedly move the remaining
+      // instructions and update each one's parent pointer.
+      AfterCallBB = OrigBB;
+      BasicBlock *BeforeCallBB =
+          BasicBlock::Create(Caller->getContext(), "", Caller, AfterCallBB);
+      BeforeCallBB->takeName(AfterCallBB);
+      AfterCallBB->setName(CalledFunc->getName() + ".exit");
+      DebugLoc Loc = CB.getStableDebugLoc();
+      if (Loc)
+        Loc = Loc->getWithoutAtom();
+      BeforeCallBB->splice(BeforeCallBB->end(), AfterCallBB,
+                           AfterCallBB->begin(), CB.getIterator());
+
+      // Entry references, including blockaddress constants, follow the prefix.
+      // Outgoing PHI edges still originate at the suffix's terminator. Repair
+      // them before creating the new prefix-to-suffix edge, including self loops.
+      AfterCallBB->replaceAllUsesWith(BeforeCallBB);
+      AfterCallBB->replaceSuccessorsPhiUsesWith(BeforeCallBB, AfterCallBB);
+      BranchInst::Create(AfterCallBB, BeforeCallBB)->setDebugLoc(Loc);
+      if (IFI.CallerBFI)
+        IFI.CallerBFI->setBlockFreq(
+            BeforeCallBB, IFI.CallerBFI->getBlockFreq(AfterCallBB));
+      OrigBB = BeforeCallBB;
+    }
   }
 
   if (IFI.CallerBFI) {

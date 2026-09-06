@@ -19,7 +19,7 @@ It will just vendor and build the deps for compiling Roc.
 This repository copies sources from upstream. Patches listed below. Use git
 to find and inspect the patch diffs.
 
- * LLVM, LLD, Clang 21.1.0
+ * LLVM, LLD, Clang 21.1.8
  * Binaryen 130
  * zlib 1.3.1
  * zstd 1.5.2
@@ -30,6 +30,10 @@ For other versions, check the git tags of this repository.
 ### Patches
 
  * all: Deleted unused files.
+ * LLVM: Skip sorted regmask positions outside live segments.
+ * LLVM: Bound address insertion-point searches by both the block and use list.
+ * LLVM: Clear and schedule only blocks touched by the current SLP tree.
+ * LLVM: Move the smaller call-site instruction range when splitting for inlining.
  * LLVM: Support .lib extension for static zstd.
  * LLVM: Don't pass -static when building executables.
  * LLVM: OpenBSD `llvm-config` logic
@@ -242,3 +246,21 @@ is more portable across Linux distributions.
 | `thumb-windows-gnu`   | OK     |
 | `x86-windows-gnu`     | OK     |
 | `x86_64-windows-gnu`  | OK     |
+
+### LLVM scaling regression tests
+
+The regression inputs for the local scaling patches are retained under
+`llvm/test/Transforms/Inline/` and `llvm/unittests/CodeGen/LiveRangeTest.cpp`.
+To test them with LLVM's upstream harness, use the complete LLVM 21.1.8 source
+release: copy the patched `InlineFunction.cpp`, `SLPVectorizer.cpp`,
+`CodeGenPrepare.cpp`, and `LiveInterval.cpp` into their corresponding source
+paths, copy the regression inputs, and add `LiveRangeTest.cpp` to the
+`CodeGenTests` sources in `llvm/unittests/CodeGen/CMakeLists.txt`.
+
+Build with assertions enabled and the X86 target, then run `CodeGenTests`,
+`IRTests`, `UtilsTests`, and `VectorizeTests`, plus `llvm-lit` over
+`Transforms/Inline`, `Transforms/SLPVectorizer`, `Transforms/CodeGenPrepare`,
+and `DebugInfo/Generic`. The live-range test exhaustively compares sorted slot
+queries against direct segment membership, including empty inputs and holes.
+The inlining test checks both split directions, block addresses, and self-loop
+and successor PHI edges with LLVM's verifier.
