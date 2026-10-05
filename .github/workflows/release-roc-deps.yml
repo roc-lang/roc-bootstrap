@@ -32,6 +32,12 @@ jobs:
           python3 nix/check-cache-inputs.py
           /usr/bin/time -v -o metrics/host-build.txt nix build --no-update-lock-file .#host-tools --out-link host-tools
           /usr/bin/time -v -o metrics/host-export.txt nix copy --to "file://$PWD/host-cache" "$(readlink -f host-tools)"
+          # The runtime closure deliberately omits these development outputs.
+          # Record their NAR hashes for the independent build in the x86 job.
+          for stage in native-llvm host-zig; do
+            stage_path=$(nix eval --raw --no-update-lock-file ".#$stage.outPath")
+            nix-store --query --hash "$stage_path" > "host-cache/$stage.nar-hash"
+          done
           du -sb host-cache > metrics/host-cache-bytes.txt
       - name: Transfer shared tools
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # ratchet:actions/upload-artifact@v4.6.2
@@ -95,7 +101,16 @@ jobs:
       - name: Compare a clean rebuild
         if: matrix.target == 'x86_64-linux-musl'
         run: |
-          /usr/bin/time -v -o metrics/stage-rebuilds.txt nix build --rebuild --no-update-lock-file .#native-llvm .#host-zig .#zlib-x86_64-linux-musl .#zstd-x86_64-linux-musl .#llvm-x86_64-linux-musl .#binaryen-x86_64-linux-musl --no-link
+          # --rebuild requires an existing output. Native development outputs
+          # are absent from the imported runtime closure, so build them once
+          # independently and compare with the host job's recorded NAR hashes.
+          /usr/bin/time -v -o metrics/native-rebuild.txt nix build --no-update-lock-file .#native-llvm .#host-zig --no-link
+          for stage in native-llvm host-zig; do
+            stage_path=$(nix eval --raw --no-update-lock-file ".#$stage.outPath")
+            nix-store --query --hash "$stage_path" > "metrics/$stage.nar-hash"
+            cmp "host-cache/$stage.nar-hash" "metrics/$stage.nar-hash"
+          done
+          /usr/bin/time -v -o metrics/stage-rebuilds.txt nix build --rebuild --no-update-lock-file .#host-tools .#zlib-x86_64-linux-musl .#zstd-x86_64-linux-musl .#llvm-x86_64-linux-musl .#binaryen-x86_64-linux-musl .#deps-x86_64-linux-musl --no-link
           /usr/bin/time -v -o metrics/rebuild.txt nix build --rebuild --no-update-lock-file .#release-x86_64-linux-musl --out-link rebuilt
           cmp assets/x86_64-linux-musl.tar.xz rebuilt/x86_64-linux-musl.tar.xz
       - name: Attest the archive produced by this build
@@ -115,6 +130,7 @@ jobs:
           path: assets
           compression-level: 0
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # ratchet:actions/upload-artifact@v4.6.2
+        if: always()
         with:
           name: metrics-${{ matrix.target }}
           path: metrics

@@ -45,7 +45,11 @@ so changing source identity does not invalidate otherwise identical compilation.
 
 The initial release checks one full x86_64 Linux rebuild, including native
 LLVM, host Zig, target libraries, and archive assembly. This is an expensive
-check of the new recipe. It does not establish bit-for-bit reproducibility for
+check of the new recipe. The native packages are built independently in the
+host-tools and x86 target jobs and compared using recorded NAR hashes; their
+development outputs are not transferred with the small runtime closure.
+Existing target-stage and assembly outputs use Nix's `--rebuild` comparison.
+It does not establish bit-for-bit reproducibility for
 every cross target. Routine iteration should use warm-cache and declared-input
 invalidation checks; further full rebuilds are useful when the toolchain or
 recipes change.
