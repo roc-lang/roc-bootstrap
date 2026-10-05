@@ -16,6 +16,18 @@ spec.loader.exec_module(validator)
 REVISION = "a" * 40
 
 
+def llvm_configuration(target):
+    architecture = {"x86": "X86", "x86_64": "X86", "arm": "ARM", "aarch64": "AArch64"}[target.split("-")[0]]
+    lines = [f'#define LLVM_HOST_TRIPLE "{target}"',
+             f'#define LLVM_DEFAULT_TARGET_TRIPLE "{target}"',
+             f"#define LLVM_NATIVE_ARCH {architecture}"]
+    for macro, suffix in (("ASMPARSER", "AsmParser"), ("ASMPRINTER", "AsmPrinter"),
+                          ("DISASSEMBLER", "Disassembler"), ("TARGET", "Target"),
+                          ("TARGETINFO", "TargetInfo"), ("TARGETMC", "TargetMC")):
+        lines.append(f"#define LLVM_NATIVE_{macro} LLVMInitialize{architecture}{suffix}")
+    return ("\n".join(lines) + "\n").encode()
+
+
 class ReleasePolicy(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
@@ -30,6 +42,7 @@ class ReleasePolicy(unittest.TestCase):
         files = {"roc-deps-build.json": json.dumps(metadata).encode()}
         for header in ("llvm-c/Core.h", "lld/Common/Driver.h", "binaryen-c.h", "zlib.h", "zstd.h"):
             files[f"include/{header}"] = b"synthetic header"
+        files["include/llvm/Config/llvm-config.h"] = llvm_configuration(target)
         for library in ("LLVMCore", "LLVMSupport", "LLVMDTLTO", "LLVMPlugins", "LLVMFrontendDirective",
                         "lldCommon", "lldELF", "lldCOFF", "lldMachO", "binaryen", "z", "zstd"):
             if "windows" in target:
@@ -59,6 +72,39 @@ class ReleasePolicy(unittest.TestCase):
         for target in ("x86_64-linux-musl", "aarch64-windows-gnu"):
             with self.subTest(target=target):
                 validator.validate(self.bundle(target), target, REVISION)
+
+    def test_accepts_llvm_configuration_for_all_targets(self):
+        for target in validator.TARGETS:
+            with self.subTest(target=target):
+                validator.verify_llvm_configuration(llvm_configuration(target), target)
+
+    def test_rejects_builder_host_triple(self):
+        for target, builder in (("x86_64-linux-musl", "x86_64-pc-linux-gnu"),
+                                ("aarch64-windows-gnu", "x86_64-w64-windows-gnu")):
+            config = llvm_configuration(target).replace(
+                f'#define LLVM_HOST_TRIPLE "{target}"'.encode(),
+                f'#define LLVM_HOST_TRIPLE "{builder}"'.encode())
+            with self.subTest(target=target), self.assertRaisesRegex(ValueError, "LLVM_HOST_TRIPLE"):
+                validator.validate(self.bundle(target, extra={"include/llvm/Config/llvm-config.h": config}), target, REVISION)
+
+    def test_rejects_wrong_native_initialization(self):
+        target = "aarch64-windows-gnu"
+        for valid, wrong in ((b"LLVM_NATIVE_ARCH AArch64", b"LLVM_NATIVE_ARCH X86"),
+                             (b"LLVM_NATIVE_TARGET LLVMInitializeAArch64Target", b"LLVM_NATIVE_TARGET LLVMInitializeX86Target")):
+            config = llvm_configuration(target).replace(valid, wrong)
+            with self.subTest(wrong=wrong), self.assertRaisesRegex(ValueError, "LLVM_NATIVE"):
+                validator.validate(self.bundle(target, extra={"include/llvm/Config/llvm-config.h": config}), target, REVISION)
+
+    def test_rejects_wrong_default_triple(self):
+        config = llvm_configuration("x86_64-linux-musl").replace(
+            b'LLVM_DEFAULT_TARGET_TRIPLE "x86_64-linux-musl"',
+            b'LLVM_DEFAULT_TARGET_TRIPLE "aarch64-linux-musl"')
+        with self.assertRaisesRegex(ValueError, "LLVM_DEFAULT_TARGET_TRIPLE"):
+            validator.validate(self.bundle(extra={"include/llvm/Config/llvm-config.h": config}), "x86_64-linux-musl", REVISION)
+
+    def test_rejects_missing_llvm_configuration(self):
+        with self.assertRaisesRegex(ValueError, "missing header"):
+            validator.validate(self.bundle(omit="include/llvm/Config/llvm-config.h"), "x86_64-linux-musl", REVISION)
 
     def test_rejects_wrong_source_and_dirty_builds(self):
         for changes in ({"sourceRevision": "d" * 40}, {"sourceDirty": True}, {"cpu": "native"}, {"components": {}}):

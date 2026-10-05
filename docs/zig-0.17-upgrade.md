@@ -101,11 +101,21 @@ Generators retain normal caching on unchanged inputs.
 
 ## Local validation record
 
-The source import, retained patch audit, LLVM assertion harness, and complete
+The source import, retained patch audit, LLVM assertion harness, and initial complete
 x86_64 Linux Nix dependency build are validated locally. Roc correctness and
 measured cache results are recorded below. Independent compiled-output
 reproduction, the other seven release targets, and GitHub release provenance
 remain gates for the release workflow; no release has been published.
+
+The initial complete Linux bundle and flat-archive consumption results below
+predate the runtime host-triple correction. Cross-target configuration used the
+builder's host triple despite the correct default code-generation target. This
+selected X86 native initializers for ARM64 Windows and a GNU runtime triple for
+Linux musl. The recipe now sets `LLVM_HOST_TRIPLE` explicitly. Actual generated
+headers pass the host/default triple, native architecture, and six native hook
+checks for ARM64 Windows and x86_64 Linux musl. The strengthened release validator
+rejects the actual pre-fix Linux archive. Corrected complete bundles must pass
+the release gates before their new content hashes are used in Roc.
 
 Checks completed locally:
 
@@ -123,8 +133,8 @@ Checks completed locally:
 * Isolated input edits verify the cache boundary across 35 compilation
   derivations: documentation/workflow and provenance-only edits reuse all
   compilation; Binaryen edits change only its eight compilation derivations.
-* Seven release-validator policy tests pass, including static-library target
-  architecture checks and rejection of missing LLVM 22's newly split
+* Thirteen release-validator policy tests pass, including exported LLVM
+  configuration, static-library target architecture, and rejection of missing LLVM 22's newly split
   `LLVMDTLTO`, `LLVMPlugins`, and `LLVMFrontendDirective` libraries. Full Roc
   eval linking exposed the missing DTLTO link dependency of LLVM 22's COFF
   driver; the bundle already contains it and Roc's ordered link list now

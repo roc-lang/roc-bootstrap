@@ -20,6 +20,25 @@ COMPONENTS = {
 }
 
 
+def verify_llvm_configuration(data, target):
+    """Reject builder host settings exported into a cross-target bundle."""
+    architecture = {"x86": "X86", "x86_64": "X86", "arm": "ARM", "aarch64": "AArch64"}[target.split("-")[0]]
+    expected = {
+        "LLVM_HOST_TRIPLE": json.dumps(target),
+        "LLVM_DEFAULT_TARGET_TRIPLE": json.dumps(target),
+        "LLVM_NATIVE_ARCH": architecture,
+    }
+    for macro, suffix in (("ASMPARSER", "AsmParser"), ("ASMPRINTER", "AsmPrinter"),
+                          ("DISASSEMBLER", "Disassembler"), ("TARGET", "Target"),
+                          ("TARGETINFO", "TargetInfo"), ("TARGETMC", "TargetMC")):
+        expected[f"LLVM_NATIVE_{macro}"] = f"LLVMInitialize{architecture}{suffix}"
+    header = data.decode("utf-8")
+    for name, value in expected.items():
+        definitions = re.findall(r"^[ \t]*#[ \t]*define[ \t]+" + name + r"[ \t]+([^\r\n]+)", header, re.MULTILINE)
+        if len(definitions) != 1 or definitions[0].strip() != value:
+            raise ValueError(f"LLVM configuration {name}: expected {value}, got {definitions}")
+
+
 def verify_library(stream, target):
     """Check the first object in an ordinary static archive against the target."""
     if stream.read(8) != b"!<arch>\n":
@@ -121,11 +140,12 @@ def validate(asset, target, revision, lock=None):
                 raise ValueError("flake lock digest mismatch")
             if json.loads(data)["nodes"]["nixpkgs"]["locked"]["rev"] != metadata["nixpkgsRevision"]:
                 raise ValueError("nixpkgs revision mismatch")
-        required = ("include/llvm-c/Core.h", "include/lld/Common/Driver.h",
+        required = ("include/llvm-c/Core.h", "include/llvm/Config/llvm-config.h", "include/lld/Common/Driver.h",
                     "include/binaryen-c.h", "include/zlib.h", "include/zstd.h")
         for relative in required:
             if relative not in names:
                 raise ValueError(f"missing header: {relative}")
+        verify_llvm_configuration(read("include/llvm/Config/llvm-config.h"), target)
         libraries = {PurePosixPath(name).name for name in names if name.startswith("lib/")}
         # Zig's Windows GNU archives may use either the .a or .lib spelling.
         for library in ("LLVMCore", "LLVMSupport", "LLVMDTLTO", "LLVMPlugins", "LLVMFrontendDirective",
