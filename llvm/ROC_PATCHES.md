@@ -21,6 +21,8 @@ implementations still have the original whole-range searches:
   the next relevant position, preserving constant-time progress for dense data.
 * `lib/CodeGen/CodeGenPrepare.cpp`: search address users and block operands in
   parallel, stopping when either establishes the first use in the current block.
+  Return a head-exclusive instruction iterator on both search paths, preserving
+  LLVM 22's placement of debug records before the first sunk address use.
 * `lib/Transforms/Utils/InlineFunction.cpp`: split call blocks by moving the
   smaller instruction range and preserve block addresses, PHI edges, debug
   locations, and block frequencies.
@@ -32,13 +34,15 @@ implementations still have the original whole-range searches:
 
 The retained regression files are
 `test/Transforms/Inline/split-smaller-call-range.ll` and
-`unittests/CodeGen/LiveRangeTest.cpp`. The former exercises both split directions,
+`unittests/CodeGen/LiveRangeTest.cpp`, plus the upstream
+`test/DebugInfo/Generic/assignment-tracking/codegenprepare/sunk-addr.ll` debug
+record regression. The Inline test exercises both split directions,
 block addresses, and outgoing/self-loop PHIs. The latter exhausts disjoint
 half-open ranges and sorted query sets in a small universe. The bootstrap
 archive prunes the upstream test harness, so these files must be overlaid on a
 full LLVM 22.1.8 source tree when running its assertion-enabled tests.
 
-To reproduce that overlay, copy the four implementation files and the two
+To reproduce that overlay, copy the four implementation files and the three
 regression files into the same relative locations in the
 [LLVM 22.1.8 source release](https://github.com/llvm/llvm-project/releases/tag/llvmorg-22.1.8).
 Append `LiveRangeTest.cpp` to the `CodeGenTests` source list in

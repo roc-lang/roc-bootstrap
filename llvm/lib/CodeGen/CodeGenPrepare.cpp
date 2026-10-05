@@ -5806,7 +5806,7 @@ static BasicBlock::iterator findInsertPos(Value *Addr, Instruction *MemoryInst,
   auto Operand = Inst->op_begin();
   for (User *U : Addr->users()) {
     if (&*Inst == Earliest)
-      return Inst;
+      return Inst->getIterator();
     // Advance by one operand, not a whole instruction: a call or inline asm
     // can itself have a large operand list. Neither search may do unbounded
     // work before giving the other search its next step.
@@ -5815,7 +5815,9 @@ static BasicBlock::iterator findInsertPos(Value *Addr, Instruction *MemoryInst,
       ++Inst;
       Operand = Inst->op_begin();
     } else if ((Operand++)->get() == Addr) {
-      return Inst;
+      // Match the head-exclusive insertion position of the use-list search:
+      // begin() includes any debug records attached to the first instruction.
+      return Inst->getIterator();
     }
     Instruction *UserInst = dyn_cast<Instruction>(U);
     if (UserInst && UserInst->getParent() == MemoryInst->getParent()) {
