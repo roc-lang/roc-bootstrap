@@ -16,6 +16,7 @@ case "$target" in
 esac
 cd "$build_dir"
 "$host_prefix/bin/zig" build-lib \
+  -j"${BOOTSTRAP_JOBS:-${CMAKE_BUILD_PARALLEL_LEVEL:-2}}" \
   --name zstd \
   -target "$target" \
   -mcpu="$cpu" \
