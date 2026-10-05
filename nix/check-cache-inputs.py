@@ -62,6 +62,11 @@ with tempfile.TemporaryDirectory(prefix=".cache-inputs-", dir=repository) as tem
     replace(".github/workflows/release-roc-deps.yml", b"# Workflow-only cache invalidation check\n")
     documentation = paths()
     assert documentation == baseline, "Documentation changed a derivation"
+    replace("llvm/ROC_PATCHES.md", b"Patch audit cache invalidation check\n")
+    replace("llvm/test/roc-cache-inputs.ll", b"; Regression fixture cache invalidation check\n")
+    replace("llvm/unittests/roc-cache-inputs.cpp", b"// Unit fixture cache invalidation check\n")
+    patch_audit = paths()
+    assert patch_audit == baseline, "LLVM patch audit or disabled tests changed a derivation"
     changed_revision = paths("1" * 40)
     assert all(changed_revision[name] == baseline[name] for name in compilation), "Provenance invalidated compilation"
     assert changed_revision["deps-x86_64-linux-musl"] != baseline["deps-x86_64-linux-musl"], "Provenance did not update assembly"

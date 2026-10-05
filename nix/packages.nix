@@ -27,6 +27,14 @@ let
     zstd = "1.5.2";
   };
 
+  # These retained patch records and regression fixtures are not read by the
+  # library builds (LLVM_INCLUDE_TESTS/DOCS are OFF). Keep their audit changes
+  # from recompiling LLVM, Zig and every downstream dependency bundle.
+  ignoredInputs = [
+    "llvm/ROC_PATCHES.md"
+    "llvm/test"
+    "llvm/unittests"
+  ];
   # A source tree must contain the sibling CMake projects expected by LLVM,
   # while its store hash must not include unrelated sources or release data.
   source =
@@ -44,7 +52,11 @@ let
             || lib.hasPrefix (prefix + "/") relative
             || (type == "directory" && lib.hasPrefix (relative + "/") prefix);
         in
-        toString path == toString self || lib.any selected paths;
+        toString path == toString self
+        || (
+          lib.any selected paths
+          && !(lib.any (prefix: relative == prefix || lib.hasPrefix (prefix + "/") relative) ignoredInputs)
+        );
     };
   nativeLlvmSource = source "roc-bootstrap-native-llvm-source" [
     "llvm"
