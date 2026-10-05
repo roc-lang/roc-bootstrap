@@ -6,26 +6,54 @@ on:
 
 # Do not add permissions here! Configure them at the job level!
 permissions: {}
+concurrency:
+  group: roc-deps-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  create-draft-release:
-    name: Create Release Draft
-    runs-on: ubuntu-latest
+  host-tools:
+    name: Build shared native tools
+    runs-on: ubuntu-24.04
     permissions:
-      contents: write
+      contents: read
     steps:
-      - name: Create Release Draft
-        uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # ratchet:softprops/action-gh-release@v2
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # ratchet:actions/checkout@v5
+      - uses: cachix/install-nix-action@b85815f71a6de0ddee80b8a80a98d43f4bcc66c7 # ratchet:cachix/install-nix-action@v31
         with:
-          name: "Roc Deps with ${{ github.ref_name }}"
-          draft: true
+          extra_nix_config: |
+            sandbox = true
+            sandbox-fallback = false
+            max-jobs = 1
+            cores = 4
+      - name: Build once and export the complete runtime closure
+        run: |
+          mkdir -p metrics
+          python3 ci/test-release-validation.py
+          python3 nix/check-cache-inputs.py
+          /usr/bin/time -v -o metrics/host-build.txt nix build --no-update-lock-file .#host-tools --out-link host-tools
+          /usr/bin/time -v -o metrics/host-export.txt nix copy --to "file://$PWD/host-cache" "$(readlink -f host-tools)"
+          du -sb host-cache > metrics/host-cache-bytes.txt
+      - name: Transfer shared tools
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # ratchet:actions/upload-artifact@v4.6.2
+        with:
+          name: host-tools-cache
+          path: host-cache
+          include-hidden-files: true
+          compression-level: 0
+          retention-days: 7
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # ratchet:actions/upload-artifact@v4.6.2
+        with:
+          name: host-metrics
+          path: metrics
 
   build:
-    needs: [create-draft-release]
-    name: Build and Release Roc Dependencies
-    runs-on: ubuntu-latest
+    needs: host-tools
+    name: Build ${{ matrix.target }}
+    runs-on: ubuntu-24.04
     permissions:
-      contents: write
+      contents: read
+      id-token: write
+      attestations: write
     strategy:
       fail-fast: false
       matrix:
@@ -38,43 +66,91 @@ jobs:
           - x86_64-linux-musl
           - x86_64-macos-none
           - x86_64-windows-gnu
-
+    env:
+      TARGET: ${{ matrix.target }}
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # ratchet:actions/checkout@v5
-
-      - name: Install Ninja
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # ratchet:actions/checkout@v5
+      - uses: cachix/install-nix-action@b85815f71a6de0ddee80b8a80a98d43f4bcc66c7 # ratchet:cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            sandbox = true
+            sandbox-fallback = false
+            max-jobs = 1
+            cores = 4
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # ratchet:actions/download-artifact@v5
+        with:
+          name: host-tools-cache
+          path: host-cache
+      - name: Import shared tools and build the target
         run: |
-          sudo apt install -y ninja-build
-
-      - name: Build Deps
+          mkdir -p metrics assets
+          host_path=$(nix eval --raw --no-update-lock-file .#packages.x86_64-linux.host-tools.outPath)
+          /usr/bin/time -v -o metrics/host-import.txt nix copy --no-check-sigs --from "file://$PWD/host-cache" "$host_path"
+          /usr/bin/time -v -o metrics/target-build.txt nix build --no-update-lock-file ".#release-$TARGET" --out-link release
+          suffix=tar.xz
+          if [[ $TARGET == *windows* ]]; then suffix=zip; fi
+          cp "release/$TARGET.$suffix" assets/
+          python3 ci/validate-release.py --asset "assets/$TARGET.$suffix" --target "$TARGET" --source-revision "$GITHUB_SHA" --flake-lock flake.lock
+          nix path-info --json ".#release-$TARGET" > metrics/nix-output.json
+      - name: Compare a clean rebuild
+        if: matrix.target == 'x86_64-linux-musl'
+        run: |
+          /usr/bin/time -v -o metrics/stage-rebuilds.txt nix build --rebuild --no-update-lock-file .#native-llvm .#host-zig .#zlib-x86_64-linux-musl .#zstd-x86_64-linux-musl .#llvm-x86_64-linux-musl .#binaryen-x86_64-linux-musl --no-link
+          /usr/bin/time -v -o metrics/rebuild.txt nix build --rebuild --no-update-lock-file .#release-x86_64-linux-musl --out-link rebuilt
+          cmp assets/x86_64-linux-musl.tar.xz rebuilt/x86_64-linux-musl.tar.xz
+      - name: Attest the archive produced by this build
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # ratchet:actions/attest@v4.2.2
+        with:
+          subject-path: assets/*
+      - name: Verify provenance and rejection cases
         env:
-          CMAKE_GENERATOR: Ninja
+          GH_TOKEN: ${{ github.token }}
         run: |
-          ./build ${{ matrix.target }} baseline || ./build ${{ matrix.target }} baseline
-          mv out/${{ matrix.target }}-baseline out/${{ matrix.target }}
+          suffix=tar.xz
+          if [[ $TARGET == *windows* ]]; then suffix=zip; fi
+          bash ci/verify-provenance.sh "assets/$TARGET.$suffix" "$GITHUB_REF_NAME" "$GITHUB_SHA"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # ratchet:actions/upload-artifact@v4.6.2
+        with:
+          name: deps-${{ matrix.target }}
+          path: assets
+          compression-level: 0
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # ratchet:actions/upload-artifact@v4.6.2
+        with:
+          name: metrics-${{ matrix.target }}
+          path: metrics
 
-      - name: Archive Deps (Unix)
-        if: ${{ !contains(matrix.target, 'windows') }}
-        run: |
-          tar -cf - -C out ${{ matrix.target }} | xz -9e -v -c - > out/${{ matrix.target }}.tar.xz
-
-      - name: Upload Release Artifact (Unix)
-        if: ${{ !contains(matrix.target, 'windows') }}
+  create-draft-release:
+    name: Assemble verified release draft
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      attestations: read
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # ratchet:actions/checkout@v5
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # ratchet:actions/download-artifact@v5
+        with:
+          pattern: deps-*
+          path: assets
+          merge-multiple: true
+      - name: Verify the complete release and record checksums
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload ${{ github.ref_name }} out/${{ matrix.target }}.tar.xz
-
-      - name: Archive Deps (Windows)
-        if: ${{ contains(matrix.target, 'windows') }}
-        run: |
-          (cd out && zip -r -9 ${{ matrix.target }}.zip ${{ matrix.target }})
-
-      - name: Upload Release Artifact (Windows)
-        if: ${{ contains(matrix.target, 'windows') }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release upload ${{ github.ref_name }} out/${{ matrix.target }}.zip
-
+          python3 ci/check-release-set.py assets "$GITHUB_SHA" flake.lock
+          for asset in assets/*.tar.xz assets/*.zip; do
+            bash ci/verify-provenance.sh "$asset" "$GITHUB_REF_NAME" "$GITHUB_SHA"
+          done
+          (cd assets && sha256sum -- *.tar.xz *.zip > SHA256SUMS)
+          python3 ci/release-notes.py "$GITHUB_REF_NAME" "$GITHUB_SHA" > release-notes.md
+      - name: Create a draft after all checks pass
+        uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # ratchet:softprops/action-gh-release@v2
+        with:
+          name: "Roc Deps with ${{ github.ref_name }}"
+          draft: true
+          fail_on_unmatched_files: true
+          body_path: release-notes.md
+          files: |
+            assets/*.tar.xz
+            assets/*.zip
+            assets/SHA256SUMS

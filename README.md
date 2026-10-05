@@ -19,15 +19,20 @@ It will just vendor and build the deps for compiling Roc.
 This repository copies sources from upstream. Patches listed below. Use git
 to find and inspect the patch diffs.
 
- * LLVM, LLD, Clang 21.1.8
+ * LLVM, LLD, Clang 22.1.8
  * Binaryen 130
  * zlib 1.3.1
  * zstd 1.5.2
- * zig 0.16.0
+ * Zig 0.17.0
 
 For other versions, check the git tags of this repository.
 
 ### Patches
+
+The Zig 0.17.0 bootstrap archive already carries the generic LLVM, Clang, LLD,
+and zlib packaging changes below. Roc retains four additional LLVM scaling
+patches and the Binaryen exclusions. Their upstream status and import checksum
+are recorded in [llvm/ROC_PATCHES.md](llvm/ROC_PATCHES.md).
 
  * all: Deleted unused files.
  * LLVM: Skip sorted regmask positions outside live segments.
@@ -51,10 +56,10 @@ For other versions, check the git tags of this repository.
 
 ## Host System Dependencies
 
- * C++ compiler capable of building LLVM, Clang, and LLD from source (GCC 5.1+
-   or Clang)
+ * C++17 compiler capable of building LLVM, Clang, and LLD from source (GCC 7.4+
+   or Clang 5+)
      * On some systems, static libstdc++/libc++ may need to be installed
- * CMake 3.19 or later
+ * CMake 3.20 or later
  * make, ninja, or any other build system supported by CMake
  * POSIX system (bash, mkdir, cd)
  * Python 3
@@ -83,7 +88,39 @@ significantly affect how long it takes to build:
    systems (such as make) which do not default to parallel builds. This option
    is irrelevant when using Ninja.
 
-When it succeeds, output can be found in `out/zig-<target>-<cpu>/`.
+When it succeeds, the dependency bundle is in `out/<target>-<cpu>/`.
+
+### Reproducible Nix builds
+
+The flake pins the build tools and builds without network access inside the
+Nix sandbox. Linux builders on `x86_64-linux` and `aarch64-linux` can build all
+eight release targets:
+
+```sh
+nix build .#release-x86_64-linux-musl
+nix build .#deps-aarch64-macos-none
+nix develop
+```
+
+`release-<target>` produces a normalized archive with a `<target>/` top-level
+directory. `deps-<target>` exposes its `include/` and `lib/` directly. The default
+package is the builder architecture's Linux musl dependency bundle. `release`
+builds all eight archives. Each bundle includes `roc-deps-build.json` describing
+its source revision, component versions, target, baseline CPU, builder, and
+flake lock. Release builds require a clean committed source tree.
+
+Native LLVM, host Zig, zlib, zstd, target LLVM/LLD, and Binaryen are separate
+derivations. Edits to documentation and release metadata reuse compiled stages;
+Binaryen edits reuse LLVM and host Zig. Each stage has a private writable Zig
+cache, and the default compile concurrency is bounded. The `host-tools` package
+contains the installed tools and Zig library tree needed for cross compilation.
+
+The [release workflow](.github/workflows/release-roc-deps.yml) transfers the
+complete host-tools runtime closure to target jobs, validates all eight bundles,
+checks an x86_64 Linux rebuild, and signs SLSA build-provenance attestations.
+It creates a draft only after those checks pass. See
+[the upgrade validation record](docs/zig-0.17-upgrade.md) for the local checks
+and release sequence, including provenance verification.
 
 ## Windows Build Instructions
 
@@ -251,7 +288,7 @@ is more portable across Linux distributions.
 
 The regression inputs for the local scaling patches are retained under
 `llvm/test/Transforms/Inline/` and `llvm/unittests/CodeGen/LiveRangeTest.cpp`.
-To test them with LLVM's upstream harness, use the complete LLVM 21.1.8 source
+To test them with LLVM's upstream harness, use the complete LLVM 22.1.8 source
 release: copy the patched `InlineFunction.cpp`, `SLPVectorizer.cpp`,
 `CodeGenPrepare.cpp`, and `LiveInterval.cpp` into their corresponding source
 paths, copy the regression inputs, and add `LiveRangeTest.cpp` to the

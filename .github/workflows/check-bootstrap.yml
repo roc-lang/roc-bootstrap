@@ -1,0 +1,29 @@
+name: Check bootstrap build definitions
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  definitions:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # ratchet:actions/checkout@v5
+      - uses: cachix/install-nix-action@b85815f71a6de0ddee80b8a80a98d43f4bcc66c7 # ratchet:cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            sandbox = true
+            sandbox-fallback = false
+      - name: Evaluate both builder systems
+        run: nix flake check --no-build --all-systems --no-update-lock-file
+      - name: Verify archive normalization and cache boundaries
+        run: |
+          nix build --no-update-lock-file .#checks.x86_64-linux.archives
+          python3 nix/check-cache-inputs.py
+          python3 ci/test-release-validation.py
+          for script in build nix/stages/*.sh; do sh -n "$script"; done
+          bash -n ci/verify-provenance.sh
