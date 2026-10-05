@@ -117,6 +117,26 @@ checks for ARM64 Windows and x86_64 Linux musl. The strengthened release validat
 rejects the actual pre-fix Linux archive. Corrected complete bundles must pass
 the release gates before their new content hashes are used in Roc.
 
+The corrected complete x86_64 Linux musl bundle at
+`a4c0cd54b12a7c6f505510a94b989407968ed8e3` passes those local release gates,
+including all required libraries, object architectures, metadata, and exported
+LLVM host/default/native configuration. Its 47,192,984-byte archive has SHA-256
+`318e03220555bbe4f14e5d9ac3ad89f949dee7dc28a7925ef3b3c08d39e82657` and Zig
+package hash `N-V-__8AAFRVFhkFMnRXW4PGcoqBLdOIVExFiNwsO9YK23gX`. Stock Zig 0.17
+standalone fetch and two independent consumer package/cache directories resolve
+the flat `include/`, `lib/`, and metadata paths correctly. The fresh consumer and
+unchanged repeat pass after stopping the archive server, with exactly one HTTP
+request across the check. No attestation API is involved. Evidence is retained
+under `roc-validation/zig-0.17-full-local-aj5xdooz/bootstrap-consumer/` in the
+sibling workspace, with release validation under
+`/tmp/roc-017-full-local-checks-aj5xdooz/bootstrap/`.
+
+This corrected local bundle is being used for full Roc checks after merging
+current upstream main. The historical Roc results below identify their earlier
+source snapshots; they are not a claim that the new full local matrix has
+finished. The other release targets and independent compiled-output reproduction
+remain outstanding.
+
 Checks completed locally:
 
 * The four retained LLVM patches pass an assertion-enabled LLVM 22.1.8 harness:
