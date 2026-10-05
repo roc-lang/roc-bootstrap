@@ -65,6 +65,12 @@ with tempfile.TemporaryDirectory(prefix=".cache-inputs-", dir=repository) as tem
     changed_revision = paths("1" * 40)
     assert all(changed_revision[name] == baseline[name] for name in compilation), "Provenance invalidated compilation"
     assert changed_revision["deps-x86_64-linux-musl"] != baseline["deps-x86_64-linux-musl"], "Provenance did not update assembly"
+    lock_contents = (fixture / "flake.lock").read_bytes()
+    replace("flake.lock", lock_contents + b"\n")
+    changed_lock_digest = paths()
+    assert all(changed_lock_digest[name] == baseline[name] for name in compilation), "Lock digest invalidated compilation"
+    assert changed_lock_digest["deps-x86_64-linux-musl"] != baseline["deps-x86_64-linux-musl"], "Lock digest did not update assembly"
+    replace("flake.lock", lock_contents)
     binaryen_file = fixture / "binaryen/CMakeLists.txt"
     replace("binaryen/CMakeLists.txt", binaryen_file.read_bytes() + b"\n# Binaryen input invalidation check\n")
     binaryen = paths()
