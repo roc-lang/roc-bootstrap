@@ -7,6 +7,18 @@ retained Roc patches are documented in [../llvm/ROC_PATCHES.md](../llvm/ROC_PATC
 
 ## Release sequence
 
+Before tagging, the release workflow can be dispatched on the reviewed branch
+to validate one target or all eight. A manual run uses the same staged recipes,
+closure transfer, metadata checks, and artifact uploads as a release build. It
+does not create a release or call the attestation API. Its target selector
+defaults to x86_64 Linux; the independent compilation rebuild is optional for
+manual runs and mandatory for that target in a tagged release.
+
+```sh
+gh workflow run release-roc-deps.yml --ref upgrade/zig-0.17 \
+  -f target=all -f check-reproducibility=true
+```
+
 1. Review and merge the bootstrap source, Nix, and release workflow changes.
 2. Push `zig-0.17.0` at the reviewed commit to run the release workflow.
 3. Review its eight target builds, metadata checks, provenance checks, and the

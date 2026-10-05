@@ -3,6 +3,26 @@ on:
   push:
     tags:
       - "zig-*"
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Target to validate without publishing a release
+        type: choice
+        default: x86_64-linux-musl
+        options:
+          - all
+          - aarch64-linux-musl
+          - aarch64-macos-none
+          - aarch64-windows-gnu
+          - arm-linux-musleabihf
+          - x86-linux-musl
+          - x86_64-linux-musl
+          - x86_64-macos-none
+          - x86_64-windows-gnu
+      check-reproducibility:
+        description: Independently rebuild x86_64 Linux compilation stages
+        type: boolean
+        default: false
 
 # Do not add permissions here! Configure them at the job level!
 permissions: {}
@@ -11,7 +31,34 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  select-targets:
+    name: Select validation targets
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      targets: ${{ steps.targets.outputs.targets }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # ratchet:actions/checkout@v5
+      - id: targets
+        env:
+          REQUESTED_TARGET: ${{ inputs.target || 'all' }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import runpy
+          targets = runpy.run_path("ci/validate-release.py")["TARGETS"]
+          requested = os.environ["REQUESTED_TARGET"]
+          if requested != "all" and requested not in targets:
+              raise SystemExit("unsupported validation target")
+          selected = targets if requested == "all" else [requested]
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write("targets=" + json.dumps(selected) + "\n")
+          PY
+
   host-tools:
+    needs: select-targets
     name: Build shared native tools
     runs-on: ubuntu-24.04
     permissions:
@@ -19,6 +66,7 @@ jobs:
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # ratchet:actions/checkout@v5
       - name: Validate the release identity before building
+        if: github.event_name == 'push'
         run: python3 ci/release-notes.py "$GITHUB_REF_NAME" "$GITHUB_SHA" > /dev/null
       - uses: cachix/install-nix-action@b85815f71a6de0ddee80b8a80a98d43f4bcc66c7 # ratchet:cachix/install-nix-action@v31
         with:
@@ -30,6 +78,7 @@ jobs:
       - name: Build once and export the complete runtime closure
         run: |
           mkdir -p metrics
+          df -B1 / /nix/store > metrics/disk-before-host-build.txt
           python3 ci/test-release-validation.py
           python3 nix/check-cache-inputs.py
           /usr/bin/time -v -o metrics/host-build.txt nix build --no-update-lock-file .#host-tools --out-link host-tools
@@ -42,6 +91,7 @@ jobs:
             nix-store --query --hash "$stage_path" > "host-cache/$stage.nar-hash"
           done
           du -sb host-cache > metrics/host-cache-bytes.txt
+          df -B1 / /nix/store > metrics/disk-after-host-build.txt
       - name: Transfer shared tools
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # ratchet:actions/upload-artifact@v4.6.2
         with:
@@ -51,12 +101,13 @@ jobs:
           compression-level: 0
           retention-days: 7
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # ratchet:actions/upload-artifact@v4.6.2
+        if: always()
         with:
           name: host-metrics
           path: metrics
 
   build:
-    needs: host-tools
+    needs: [select-targets, host-tools]
     name: Build ${{ matrix.target }}
     runs-on: ubuntu-24.04
     permissions:
@@ -64,15 +115,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target:
-          - aarch64-linux-musl
-          - aarch64-macos-none
-          - aarch64-windows-gnu
-          - arm-linux-musleabihf
-          - x86-linux-musl
-          - x86_64-linux-musl
-          - x86_64-macos-none
-          - x86_64-windows-gnu
+        target: ${{ fromJSON(needs.select-targets.outputs.targets) }}
     env:
       TARGET: ${{ matrix.target }}
     steps:
@@ -91,6 +134,7 @@ jobs:
       - name: Import shared tools and build the target
         run: |
           mkdir -p metrics assets
+          df -B1 / /nix/store > metrics/disk-before-target-build.txt
           host_path=$(nix eval --raw --no-update-lock-file .#packages.x86_64-linux.host-tools.outPath)
           /usr/bin/time -v -o metrics/host-import.txt nix copy --no-check-sigs --from "file://$PWD/host-cache" "$host_path"
           /usr/bin/time -v -o metrics/target-build.txt nix build --no-update-lock-file ".#release-$TARGET" --out-link release
@@ -99,8 +143,9 @@ jobs:
           cp "release/$TARGET.$suffix" assets/
           python3 ci/validate-release.py --asset "assets/$TARGET.$suffix" --target "$TARGET" --source-revision "$GITHUB_SHA" --flake-lock flake.lock
           nix path-info --json ".#release-$TARGET" > metrics/nix-output.json
+          df -B1 / /nix/store > metrics/disk-after-target-build.txt
       - name: Compare a clean rebuild
-        if: matrix.target == 'x86_64-linux-musl'
+        if: matrix.target == 'x86_64-linux-musl' && (github.event_name == 'push' || inputs.check-reproducibility)
         run: |
           # --rebuild requires an existing output. Native development outputs
           # are absent from the imported runtime closure, so build them once
@@ -127,6 +172,7 @@ jobs:
 
   create-draft-release:
     name: Assemble verified release draft
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/zig-')
     needs: build
     runs-on: ubuntu-24.04
     permissions:
