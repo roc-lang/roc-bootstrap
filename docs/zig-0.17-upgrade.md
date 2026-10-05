@@ -140,16 +140,20 @@ that the official prebuilt compiler selects an unusable dynamic loader inside
 the Nix sandbox; patching its library source cannot change the compiler's
 baked-in native detection. The source recipe applies nixpkgs' pinned `env`
 probe before compilation and checks a compiled native libc executable during
-installation. The source package passes its sandbox build and installation
-check; a separate sandbox probe compiles and runs a native libc/zlib program
-with Nix's compiler and linker flags intact.
+installation. Its initial native-target package passed the sandbox build and
+installation check, and a separate sandbox probe compiled and ran a native
+libc/zlib program with Nix's compiler and linker flags intact. The subsequent
+explicit-target recipe removes host-kernel detection; compilation passes, but
+its final installation validation remains pending an ELF fixup correction.
+All four supported Nix system definitions evaluate. Darwin has not received
+the Linux target-pinning correction or a reproducibility validation.
 
 The first complete native LLVM compilation took 46 minutes 24 seconds, then
 failed Nix's dangling-symlink check because disabled Clang tools still installed
 aliases for the absent driver. The final native recipe disables that driver
 directory explicitly. The final native LLVM stage builds successfully and
-passes Nix fixup; its output has only glibc/libgcc runtime references. Host Zig
-and the complete target bundle are still building. The failed first run is
+passes Nix fixup; its output has only glibc/libgcc runtime references. The complete
+target LLVM bundle is still building. The failed first run is
 diagnostic evidence, not a successful build or performance measurement.
 
 The first source-built host Zig also passes native and Linux/macOS/Windows
@@ -157,8 +161,17 @@ object smoke checks. A compile-time target probe then exposed another impurity:
 `native` embeds the builder's running Linux kernel as its minimum and maximum
 version. The final host recipe pins Linux 4.19, the locked glibc version, a
 baseline CPU, and the Nix dynamic loader. A sandboxed explicit-target LLVM
-static-link probe passes. This host-only correction reuses native LLVM; its
-final rebuild and complete target bundle are still in progress.
+static-link probe passes. This host-only correction reuses native LLVM. The
+corrected host-tools stage passes its sandbox build and native GNU, pinned GNU,
+Linux musl, macOS, and Windows compile/tool smoke checks. Its 11-path runtime
+closure excludes native LLVM and host Zig development outputs: approximately
+540 MiB of uncompressed NAR data exports to a 95 MiB file cache. The measured
+export took 126.37 seconds; importing into an empty store took 3.92 seconds.
+The warm host-tools build took 1.41 seconds. These are stage validation costs,
+not a controlled Zig version performance comparison.
+
+The x86_64 musl zlib, zstd, and Binaryen stages are complete. Target LLVM/LLD,
+bundle assembly, and the full static libc++ link/run probe remain pending.
 
 The initial Roc 0.16 baseline is from `ce7b298cacaee79e7dbcaba3b6cde6d8f3d73bf9`
 on the same host, using four build jobs. Cold configure (`zig build --help` with
