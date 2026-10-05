@@ -163,7 +163,7 @@ failed Nix's dangling-symlink check because disabled Clang tools still installed
 aliases for the absent driver. The final native recipe disables that driver
 directory explicitly. The final native LLVM stage builds successfully and
 passes Nix fixup; its output has only glibc/libgcc runtime references. The complete
-target LLVM bundle is still building. The failed first run is
+target LLVM bundle subsequently built successfully. The failed first run is
 diagnostic evidence, not a successful build or performance measurement.
 
 The first source-built host Zig also passes native and Linux/macOS/Windows
@@ -194,7 +194,9 @@ archive is from commit `4638291a35af1baf5b1d075908f2fbf2f30a37a2`; its SHA256 is
 `3a5c35d79839a16e8ad053c4fd9e3f83e2f3935f1f4400a152f880e4c4ac0e21`.
 This is a local validation artifact, not a published release pin or an
 attestation. Assembling metadata for this integration branch reused every
-compiled stage. Independent compiled-output reproduction and complete bundles
+compiled stage. A subsequent `nix build --offline` of the complete bundle also
+passed: only metadata and bundle assembly ran, with every compilation reused
+and no GitHub attestation API dependency. Independent compiled-output reproduction and complete bundles
 for the other seven targets remain release CI gates.
 
 Successful build-phase durations with four-core budgets were 44m45s for native
