@@ -10,6 +10,9 @@ zlib_prefix=$7
 zstd_prefix=$8
 . "${BOOTSTRAP_CROSS_CMAKE:-$(dirname -- "$0")/cross-cmake.sh}"
 
+# The default triple controls generated code; the host triple describes where
+# this LLVM library runs and selects its native target initializers. CMake's
+# host detection otherwise uses the builder's architecture/OS in cross builds.
 cross_cmake "$source_root/llvm" \
     -DCMAKE_PREFIX_PATH="$zlib_prefix;$zstd_prefix" \
     -DLLVM_APPEND_VC_REV=OFF \
@@ -37,6 +40,7 @@ cross_cmake "$source_root/llvm" \
     -DLLVM_INCLUDE_DOCS=OFF \
     -DLLVM_PARALLEL_LINK_JOBS=1 \
     -DLLVM_PARALLEL_TABLEGEN_JOBS=2 \
+    -DLLVM_HOST_TRIPLE="$target" \
     -DLLVM_DEFAULT_TARGET_TRIPLE="$target" \
     -DLLVM_TOOL_LLVM_LTO2_BUILD=OFF \
     -DLLVM_TOOL_LLVM_LTO_BUILD=OFF \
