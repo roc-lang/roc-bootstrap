@@ -85,7 +85,8 @@ let
         pkgs.cmake
         pkgs.ninja
         pkgs.python3
-      ];
+      ]
+      ++ lib.optionals cross [ pkgs.util-linux ];
       dontConfigure = true;
       dontInstall = true;
       dontStrip = cross;
@@ -98,11 +99,15 @@ let
         if [ "$BOOTSTRAP_JOBS" -gt 4 ]; then export BOOTSTRAP_JOBS=4; fi
         ${lib.optionalString cross ''
           unset NIX_CFLAGS_COMPILE NIX_LDFLAGS
+          # zig cc chooses its internal worker count from CPU affinity rather
+          # than accepting build-lib's -j flag. Bound the entire stage, so its
+          # CMake, Ninja and Zig workers share the same declared CPU budget.
+          bootstrap_cpu_list=$(python3 -c 'import os; print(",".join(map(str, sorted(os.sched_getaffinity(0))[:int(os.environ["BOOTSTRAP_JOBS"])])))')
         ''}
         ${lib.optionalString crossCmake ''
           export BOOTSTRAP_CROSS_CMAKE=${./stages/cross-cmake.sh}
         ''}
-        ${pkgs.runtimeShell} ${script} "$PWD" "$TMPDIR/stage-build" "$out" ${lib.escapeShellArgs arguments}
+        ${lib.optionalString cross ''taskset --cpu-list "$bootstrap_cpu_list" ''}${pkgs.runtimeShell} ${script} "$PWD" "$TMPDIR/stage-build" "$out" ${lib.escapeShellArgs arguments}
         runHook postBuild
       '';
       meta.platforms = systems;

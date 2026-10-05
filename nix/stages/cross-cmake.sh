@@ -16,11 +16,8 @@ mkdir -p "$build_dir/zig-global-cache" "$build_dir/zig-local-cache"
 export ZIG_GLOBAL_CACHE_DIR="$build_dir/zig-global-cache"
 export ZIG_LOCAL_CACHE_DIR="$build_dir/zig-local-cache"
 zig="$host_prefix/bin/zig"
-# Ninja controls the total number of compiler invocations. Keep each Zig
-# invocation bounded as well, including first-use libc/cache preparation.
-compiler_jobs=${BOOTSTRAP_COMPILER_JOBS:-1}
-compiler="$zig;cc;-j$compiler_jobs;-fno-sanitize=all;-s;-target;$target;-mcpu=$cpu"
-cxx_compiler="$zig;c++;-j$compiler_jobs;-fno-sanitize=all;-s;-target;$target;-mcpu=$cpu"
+compiler="$zig;cc;-fno-sanitize=all;-s;-target;$target;-mcpu=$cpu"
+cxx_compiler="$zig;c++;-fno-sanitize=all;-s;-target;$target;-mcpu=$cpu"
 prefix_map="-ffile-prefix-map=$source_root=/usr/src/roc-bootstrap -ffile-prefix-map=$build_dir=/usr/src/roc-bootstrap-build"
 
 cross_cmake() {
