@@ -52,6 +52,7 @@ are recorded in [llvm/ROC_PATCHES.md](llvm/ROC_PATCHES.md).
  * LLD: OpenBSD `findMajMinShlib()` logic
  * Binaryen: Disable LLVM DWARF support.
  * Binaryen: Disable the outlining pass and its LLVM suffix-tree dependency.
+ * Zig: Retain explicit dynamic-linker argument bytes in the build maker's argv arena.
  * zlib: Delete the ability to build a shared library.
 
 ## Host System Dependencies

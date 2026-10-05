@@ -1306,7 +1306,9 @@ fn appendModuleFlags(
             if (query.dynamic_linker) |*dynamic_linker| {
                 if (dynamic_linker.get()) |dynamic_linker_path| {
                     zig_args.appendAssumeCapacity("--dynamic-linker");
-                    zig_args.appendAssumeCapacity(dynamic_linker_path);
+                    // The query owns this inline buffer. Retain the argument
+                    // after appendModuleFlags returns by copying it to the arena.
+                    zig_args.appendAssumeCapacity(try arena.dupe(u8, dynamic_linker_path));
                 } else {
                     zig_args.appendAssumeCapacity("--no-dynamic-linker");
                 }
@@ -1343,6 +1345,84 @@ fn appendModuleFlags(
             zig_args.appendAssumeCapacity(string.slice(conf));
         },
     };
+}
+
+test "module arguments retain dynamic linker paths after target queries return" {
+    var arena_allocator: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_allocator.deinit();
+    const arena = arena_allocator.allocator();
+    var wip: Configuration.Wip = .init(arena);
+    defer wip.deinit();
+    try std.testing.expectEqual(Configuration.String.empty, try wip.addString(""));
+
+    const cases = [_]struct {
+        arch: std.Target.Cpu.Arch,
+        linker: ?[]const u8,
+    }{
+        .{ .arch = .x86_64, .linker = "/nix/store/57iz36553175g3178pvxjij8z5rcsd4n-glibc-2.42-61/lib/ld-linux-x86-64.so.2" },
+        .{ .arch = .aarch64, .linker = "/a/different/target/with/a/longer/interpreter/path/ld-linux-aarch64.so.1" },
+        .{ .arch = .x86_64, .linker = "" },
+        .{ .arch = .aarch64, .linker = null },
+    };
+    var modules: [cases.len]Configuration.Module.Index = undefined;
+    for (cases, &modules) |case, *module_index| {
+        const query: std.Target.Query = .{
+            .cpu_arch = case.arch,
+            .os_tag = .linux,
+            .abi = .gnu,
+            .dynamic_linker = if (case.linker) |path| .init(path) else null,
+        };
+        const query_index = try wip.addTargetQuery(&query);
+        const resolved = try wip.addExtra(Configuration.ResolvedTarget, .{
+            .query = query_index,
+            .result = query_index.unwrap().?,
+        });
+        var module = std.mem.zeroes(Configuration.Module);
+        module.resolved_target = .init(resolved);
+        module_index.* = try wip.addExtra(Configuration.Module, module);
+    }
+
+    var scanned_config: @import("../ScannedConfig.zig") = undefined;
+    scanned_config.configuration = std.mem.zeroes(Configuration);
+    scanned_config.configuration.string_bytes = wip.string_bytes.items;
+    scanned_config.configuration.extra = wip.extra.items;
+    var maker: Maker = undefined;
+    maker.gpa = arena;
+    maker.scanned_config = &scanned_config;
+    var argv: std.ArrayList([]const u8) = .empty;
+    var starts: [cases.len + 1]usize = undefined;
+    for (modules, 0..) |module_index, i| {
+        starts[i] = argv.items.len;
+        try @call(.never_inline, appendModuleFlags, .{
+            arena, module_index, &argv, @as(Configuration.Step.Index, @fromBackingInt(0)), &maker,
+        });
+    }
+    starts[cases.len] = argv.items.len;
+    @call(.never_inline, churnArgumentStack, .{});
+
+    for (cases, 0..) |case, i| {
+        const args = argv.items[starts[i]..starts[i + 1]];
+        var found_linker = false;
+        var found_no_linker = false;
+        for (args, 0..) |arg, j| {
+            if (std.mem.eql(u8, arg, "--dynamic-linker")) {
+                found_linker = true;
+                try std.testing.expectEqualStrings(case.linker.?, args[j + 1]);
+            }
+            if (std.mem.eql(u8, arg, "--no-dynamic-linker")) found_no_linker = true;
+        }
+        try std.testing.expectEqual(case.linker != null and case.linker.?.len > 0, found_linker);
+        try std.testing.expectEqual(case.linker != null and case.linker.?.len == 0, found_no_linker);
+    }
+}
+
+fn churnArgumentStack() void {
+    var bytes: [8192]u8 = undefined;
+    for (&bytes, 0..) |*byte, i| {
+        const retained: *volatile u8 = byte;
+        retained.* = @intCast(i % 251);
+    }
+    std.mem.doNotOptimizeAway(&bytes);
 }
 
 /// Assumes unused capacity for at least 2 items.
