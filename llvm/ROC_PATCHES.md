@@ -37,7 +37,7 @@ The retained regression files are
 `unittests/CodeGen/LiveRangeTest.cpp`, plus the upstream
 `test/DebugInfo/Generic/assignment-tracking/codegenprepare/sunk-addr.ll` debug
 record regression. The Inline test exercises both split directions,
-block addresses, and outgoing/self-loop PHIs. The latter exhausts disjoint
+block addresses, and outgoing/self-loop PHIs. The LiveRange test exhausts disjoint
 half-open ranges and sorted query sets in a small universe. The bootstrap
 archive prunes the upstream test harness, so these files must be overlaid on a
 full LLVM 22.1.8 source tree when running its assertion-enabled tests.
@@ -48,5 +48,9 @@ regression files into the same relative locations in the
 Append `LiveRangeTest.cpp` to the `CodeGenTests` source list in
 `llvm/unittests/CodeGen/CMakeLists.txt`, then configure LLVM with
 `LLVM_ENABLE_ASSERTIONS=ON`, `LLVM_INCLUDE_TESTS=ON`, and at least the X86 target.
-Build `opt`, `FileCheck`, and `CodeGenTests`. Run the LiveRange unit test and the
-Inline, SLPVectorizer, CodeGenPrepare, and DebugInfo lit suites with that build.
+Build `opt`, `llc`, `FileCheck`, `CodeGenTests`, `IRTests`, `UtilsTests`, and
+`VectorizeTests`. The lit suites also use `llvm-config`, `count`, `not`,
+`split-file`, `llvm-as`, `llvm-dis`, `llvm-dwarfdump`, `llvm-readobj`,
+`llvm-bcanalyzer`, `llvm-extract`, `llvm-link`, `llvm-opt-report`, and
+`llvm-remarkutil`. Run the four unit-test binaries and the Inline,
+SLPVectorizer, CodeGenPrepare, and `DebugInfo/Generic` lit suites with that build.

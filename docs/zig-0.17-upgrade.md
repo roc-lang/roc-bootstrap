@@ -15,7 +15,7 @@ retained Roc patches are documented in [../llvm/ROC_PATCHES.md](../llvm/ROC_PATC
 4. Publish the resulting draft. Until the workflow has run, build provenance
    and cross-target release validation remain unverified.
 5. Fetch each published archive with Zig 0.17, record its Zig package hash in
-   Roc's `build.zig.zon`, and regenerate `src/build.zig.zon.nix`. Link the build
+   Roc's `build.zig.zon`, and regenerate `build.zig.zon.nix`. Link the build
    run in Roc's upgrade PR and verify every pinned asset's provenance.
 6. Merge Roc after its correctness and build-cache checks pass.
 
@@ -67,13 +67,22 @@ source files.
 
 ## Local validation record
 
-Implementation and validation are in progress. The source import and retained
-patch audit are complete. Full LLVM assertion-harness results, Nix stage builds,
-Roc correctness tests, measured cache behavior, release asset hashes, and GitHub
+Implementation and validation are in progress. The source import, retained
+patch audit, and LLVM assertion harness are complete. Nix stage builds, Roc
+correctness tests, measured cache behavior, release asset hashes, and GitHub
 attestations are recorded here as those checks finish.
 
 Checks completed locally:
 
+* The four retained LLVM patches pass an assertion-enabled LLVM 22.1.8 harness:
+  CodeGen (260), IR (852), Utils (175), and Vectorize (68) unit tests pass,
+  including the exhaustive live-range regression. The Inline, SLPVectorizer,
+  CodeGenPrepare, and Generic DebugInfo lit suites pass 1,236 tests, with one
+  expected failure and 347 unsupported tests. The X86-only harness skips 48
+  architecture-specific unit tests. The first lit run caught an LLVM 22 debug
+  record insertion regression in the bounded address-user search; returning
+  head-exclusive instruction iterators fixed it without changing the search's
+  scaling. The upstream debug regression is retained in this repository.
 * All flake outputs evaluate on both Linux builder architectures. The archive
   normalization check passes in the Nix sandbox.
 * Isolated input edits verify the cache boundary across 35 compilation
@@ -88,6 +97,21 @@ Checks completed locally:
   tests in `ReleaseSafe`: dirty edits and reverts, import membership, dependency
   and exact toolchain changes, semantic options, path independence, and stable
   dependency ordering. Runtime cache wiring is still being validated.
+
+The Roc Nix development toolchain is built from hash-pinned Zig 0.17.0 source
+using the locked nixpkgs LLVM 22.1.5 package. This compiler's LLVM is separate
+from Roc's LLVM 22.1.8 bootstrap dependency bundle. A native-libc probe exposed
+that the official prebuilt compiler selects an unusable dynamic loader inside
+the Nix sandbox; patching its library source cannot change the compiler's
+baked-in native detection. The source recipe applies nixpkgs' pinned `env`
+probe before compilation and checks a compiled native libc executable during
+installation. Its actual sandbox build and zlib link test are still running.
+
+The first complete native LLVM compilation took 46 minutes 24 seconds, then
+failed Nix's dangling-symlink check because disabled Clang tools still installed
+aliases for the absent driver. The final native recipe disables that driver
+directory explicitly. This failed run is diagnostic evidence, not a successful
+build or performance measurement.
 
 The initial Roc 0.16 baseline is from `ce7b298cacaee79e7dbcaba3b6cde6d8f3d73bf9`
 on the same host, using four build jobs. Cold configure (`zig build --help` with

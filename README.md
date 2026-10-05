@@ -56,8 +56,8 @@ are recorded in [llvm/ROC_PATCHES.md](llvm/ROC_PATCHES.md).
 
 ## Host System Dependencies
 
- * C++17 compiler capable of building LLVM, Clang, and LLD from source (GCC 7.4+
-   or Clang 5+)
+ * C++17 compiler capable of building LLVM, Clang, and LLD from source (GCC 8+
+   or Clang 10+; the build uses `-ffile-prefix-map` for reproducible paths)
      * On some systems, static libstdc++/libc++ may need to be installed
  * CMake 3.20 or later
  * make, ninja, or any other build system supported by CMake
