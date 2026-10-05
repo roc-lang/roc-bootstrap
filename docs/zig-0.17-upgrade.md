@@ -260,6 +260,17 @@ and dependency setup differ; 0.17 uses a previously built local Nix bundle.
 They do not demonstrate a substantial compiler-build timing improvement.
 Exact commands, hashes, cache paths, logs, and resource usage are retained in
 `/tmp/roc-zig-017-validation/roc-017-performance-clean-inputs.json`.
+The later compatibility-ID audit found truncated nested OS version bounds in
+display formatting. The correction uses complete structured range encoding;
+measurements retain their original source snapshot instead of being presented
+as timings of that later correction. Six actual structured-range tests and 19
+mode/target objects pass, including the original formatter collision as a
+negative control. The corrected compiler at `6b3ff0b659` passes all 152 Debug
+build steps, interpreter/dev/cached native controls, and an emitted LLVM
+speed-mode executable. Its new compatibility namespace separates it from
+caches authored by the earlier incomplete hash. The actual-module regression
+is kept in Roc's `ci/test_compiler_artifact_identity.py`; its local results are
+retained at `/tmp/roc-017-artifact-identity-corrected/results.json`.
 
 The useful cache change is preservation and correct invalidation. With the
 same populated cache configured for CLI and compiler build, the 0.16 unchanged
