@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Release publication / explicit audit only. Routine builds use content hashes.
 set -euo pipefail
 
 if [[ $# != 3 ]]; then

@@ -123,6 +123,11 @@ It creates a draft only after those checks pass. See
 [the upgrade validation record](docs/zig-0.17-upgrade.md) for the local checks
 and release sequence, including provenance verification.
 
+Routine builds and CI use the locked Nix inputs and content hashes. Roc verifies
+its pinned Zig package hashes when fetching dependency bundles. Attestation API
+checks run only during release publication or an explicitly requested provenance
+audit; local builds and cache checks do not require a GitHub token.
+
 ## Windows Build Instructions
 
 Bootstrapping on Windows with MSVC is also possible via `build.bat`, which

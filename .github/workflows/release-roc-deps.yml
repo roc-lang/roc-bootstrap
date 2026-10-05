@@ -58,8 +58,6 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
-      id-token: write
-      attestations: write
     strategy:
       fail-fast: false
       matrix:
@@ -113,17 +111,6 @@ jobs:
           /usr/bin/time -v -o metrics/stage-rebuilds.txt nix build --rebuild --no-update-lock-file .#host-tools .#zlib-x86_64-linux-musl .#zstd-x86_64-linux-musl .#llvm-x86_64-linux-musl .#binaryen-x86_64-linux-musl .#deps-x86_64-linux-musl --no-link
           /usr/bin/time -v -o metrics/rebuild.txt nix build --rebuild --no-update-lock-file .#release-x86_64-linux-musl --out-link rebuilt
           cmp assets/x86_64-linux-musl.tar.xz rebuilt/x86_64-linux-musl.tar.xz
-      - name: Attest the archive produced by this build
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # ratchet:actions/attest@v4.2.2
-        with:
-          subject-path: assets/*
-      - name: Verify provenance and rejection cases
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          suffix=tar.xz
-          if [[ $TARGET == *windows* ]]; then suffix=zip; fi
-          bash ci/verify-provenance.sh "assets/$TARGET.$suffix" "$GITHUB_REF_NAME" "$GITHUB_SHA"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # ratchet:actions/upload-artifact@v4.6.2
         with:
           name: deps-${{ matrix.target }}
@@ -141,7 +128,8 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
-      attestations: read
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # ratchet:actions/checkout@v5
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # ratchet:actions/download-artifact@v5
@@ -149,11 +137,18 @@ jobs:
           pattern: deps-*
           path: assets
           merge-multiple: true
-      - name: Verify the complete release and record checksums
+      - name: Validate the complete release locally
+        run: python3 ci/check-release-set.py assets "$GITHUB_SHA" flake.lock
+      # Build jobs use content checks only and preserve their artifacts even if
+      # the attestation service is unavailable during publication.
+      - name: Attest the validated release archives
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # ratchet:actions/attest@v4.2.2
+        with:
+          subject-path: assets/*
+      - name: Verify release provenance and record checksums
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          python3 ci/check-release-set.py assets "$GITHUB_SHA" flake.lock
           for asset in assets/*.tar.xz assets/*.zip; do
             bash ci/verify-provenance.sh "$asset" "$GITHUB_REF_NAME" "$GITHUB_SHA"
           done

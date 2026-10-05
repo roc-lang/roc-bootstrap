@@ -16,7 +16,7 @@ retained Roc patches are documented in [../llvm/ROC_PATCHES.md](../llvm/ROC_PATC
    and cross-target release validation remain unverified.
 5. Fetch each published archive with Zig 0.17, record its Zig package hash in
    Roc's `build.zig.zon`, and regenerate `build.zig.zon.nix`. Link the build
-   run in Roc's upgrade PR and verify every pinned asset's provenance.
+   run and recorded content hashes in Roc's upgrade PR.
 6. Merge Roc after its correctness and build-cache checks pass.
 
 Local Roc development can use `-Droc-deps-path=<complete bundle>` before the
@@ -30,8 +30,17 @@ archives are not rebuilt by this upgrade. SLSA build provenance binds future
 archive digests to the workflow, tag, and source commit. It is checked separately
 from the release attestation and the Zig package hash.
 
+Routine builds, dependency fetches, and CI checks rely on reviewed content
+hashes and locked Nix inputs. They do not query GitHub's attestation API.
+Provenance verification belongs to release publication and explicit audits;
+it is not a prerequisite for building or checking a cached dependency bundle.
+Roc's application-cache compatibility digest is also computed locally from
+declared compiler inputs, toolchain bytes, and effective build options.
+
 ```sh
+# Explicit release provenance audit (requires the GitHub attestation service).
 bash ci/verify-provenance.sh x86_64-linux-musl.tar.xz zig-0.17.0 <source-commit>
+# Local metadata and archive validation (no attestation API).
 python3 ci/validate-release.py --asset x86_64-linux-musl.tar.xz \
   --target x86_64-linux-musl --source-revision <source-commit> --flake-lock flake.lock
 ```
@@ -101,11 +110,24 @@ Checks completed locally:
 * The compiler compatibility host tool passes seven filesystem integration
   tests in `ReleaseSafe`: dirty edits and reverts, import membership, dependency
   and exact toolchain changes, semantic options, path independence, and stable
-  dependency ordering. Runtime cache wiring is still being validated.
+  dependency ordering. Actual builtin compiler/bake graphs also reuse outputs
+  after unchanged, Git-HEAD-only, displayed-version-only, documentation, and
+  dedicated test-only changes. A production-source edit invalidates the compiler
+  and all three bake processes; reverting it restores the original cached
+  outputs. Three independently invoked Debug bakes produce identical bytes.
+  Concurrent fixture graphs pass with shared and separate caches while keeping
+  mutable test output away from the checkout and cached inputs.
 * Roc's checker passes 1,659 tests in `ReleaseSafe`; postcheck passes 622 tests
   with one skip, LIR passes 537 tests, and LIR core passes 27 tests. The migration
   exposed invalid test fixture lifetimes and allocator-dependent failure
   injection; the corrected fixtures retain leak and allocation failure checks.
+* The full Roc compilation suite passes 781 tests in `ReleaseSafe`. Its new
+  version-pin cache checks retain warnings when recognized human versions
+  change, while keeping unpinned artifacts independent of the displayed
+  version. A full-suite failure exposed a production Boxy allocation lifetime
+  bug: materializing hidden dictionary arguments could grow an array after
+  capturing the destination pointer. Reacquiring the index after materializing
+  the arguments fixes the regression; its focused 21-test suite also passes.
 * Actual compiler-runtime object builds pass on FreeBSD, OpenBSD, NetBSD,
   x86_64 macOS (LLVM), and aarch64 macOS in Zig 0.17 `Debug`. Equivalent Zig 0.16
   controls crash on the three BSDs and x86_64 macOS. The obsolete BSD exclusion
@@ -129,6 +151,14 @@ directory explicitly. The final native LLVM stage builds successfully and
 passes Nix fixup; its output has only glibc/libgcc runtime references. Host Zig
 and the complete target bundle are still building. The failed first run is
 diagnostic evidence, not a successful build or performance measurement.
+
+The first source-built host Zig also passes native and Linux/macOS/Windows
+object smoke checks. A compile-time target probe then exposed another impurity:
+`native` embeds the builder's running Linux kernel as its minimum and maximum
+version. The final host recipe pins Linux 4.19, the locked glibc version, a
+baseline CPU, and the Nix dynamic loader. A sandboxed explicit-target LLVM
+static-link probe passes. This host-only correction reuses native LLVM; its
+final rebuild and complete target bundle are still in progress.
 
 The initial Roc 0.16 baseline is from `ce7b298cacaee79e7dbcaba3b6cde6d8f3d73bf9`
 on the same host, using four build jobs. Cold configure (`zig build --help` with

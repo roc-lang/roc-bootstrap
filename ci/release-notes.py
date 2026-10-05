@@ -22,8 +22,16 @@ toolchain, target, and lock identity. `SHA256SUMS` records the archive digests.
 The x86_64 Linux job also checks a rebuild for reproducibility; build and closure
 transfer measurements are attached to the workflow run.
 
+Routine builds use locked Nix inputs and Roc's pinned Zig package content
+hashes; they do not require the GitHub attestation API. To check downloaded
+archive bytes against the release manifest:
+
+```sh
+sha256sum --check --ignore-missing SHA256SUMS
+```
+
 All eight archives must pass SLSA build-provenance verification before this draft
-is created. For a downloaded archive:
+is created. For an explicit release provenance audit:
 
 ```sh
 gh attestation verify x86_64-linux-musl.tar.xz \\
