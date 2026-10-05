@@ -140,7 +140,14 @@ let
       version = versions.zig;
       src = zigSource;
       script = ./stages/host-zig.sh;
-      arguments = [ (toString nativeLlvm) ];
+      arguments = [
+        (toString nativeLlvm)
+        # Native target detection copies the builder's kernel into Zig's
+        # builtin target. Pin the OS minimum and libc to avoid that input and
+        # retain portability to older Linux builders and runners.
+        "${pkgs.stdenv.hostPlatform.parsed.cpu.name}-linux.4.19-gnu.${pkgs.glibc.version}"
+        pkgs.stdenv.cc.bintools.dynamicLinker
+      ];
     }).overrideAttrs
       (_: {
         # Native ABI/linker detection probes env as an ELF binary. The sandbox has
