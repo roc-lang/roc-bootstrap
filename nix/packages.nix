@@ -309,6 +309,16 @@ in
     release = releaseAll;
   };
   checks = {
+    package-consumption =
+      pkgs.runCommand "roc-bootstrap-package-cache-check"
+        {
+          nativeBuildInputs = [ pkgs.python3 ];
+        }
+        ''
+          python3 ${../ci/test-package-consumption.py} \
+            --zig ${hostTools}/bin/zig --archive-script ${./archive.py}
+          touch "$out"
+        '';
     archives =
       pkgs.runCommand "roc-bootstrap-archive-normalization-check"
         {

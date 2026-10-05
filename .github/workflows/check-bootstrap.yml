@@ -20,6 +20,14 @@ jobs:
             sandbox-fallback = false
       - name: Evaluate both builder systems
         run: nix flake check --no-build --all-systems --no-update-lock-file
+      - name: Check hashed packages with pinned Zig
+        run: |
+          zig_check_dir="$RUNNER_TEMP/package-check-zig"
+          mkdir -p "$zig_check_dir"
+          curl --fail --location --retry 3 https://ziglang.org/download/0.17.0/zig-x86_64-linux-0.17.0.tar.xz -o "$zig_check_dir/zig.tar.xz"
+          printf '%s  %s\n' 1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026 "$zig_check_dir/zig.tar.xz" | sha256sum --check
+          tar -xJf "$zig_check_dir/zig.tar.xz" --strip-components=1 -C "$zig_check_dir"
+          python3 ci/test-package-consumption.py --zig "$zig_check_dir/zig" --archive-script nix/archive.py
       - name: Verify archive normalization and cache boundaries
         run: |
           nix build --no-update-lock-file .#checks.x86_64-linux.archives

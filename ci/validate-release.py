@@ -97,11 +97,13 @@ def validate(asset, target, revision, lock=None):
             raise ValueError("duplicate archive member")
         for name in names:
             path = PurePosixPath(name)
-            if path.is_absolute() or ".." in path.parts or not path.parts or path.parts[0] != target:
+            if path.is_absolute() or ".." in path.parts or not path.parts:
                 raise ValueError(f"unsafe or incorrectly rooted member: {name}")
+            if path.parts[0] not in ("include", "lib") and name != "roc-deps-build.json":
+                raise ValueError(f"unexpected package root member: {name}")
             if "\\" in name:
                 raise ValueError(f"non-portable archive path: {name}")
-        metadata = json.loads(read(f"{target}/roc-deps-build.json"))
+        metadata = json.loads(read("roc-deps-build.json"))
         expected = {"schemaVersion": 1, "sourceRevision": revision, "sourceDirty": False,
                     "components": COMPONENTS, "target": target, "cpu": "baseline"}
         for key, value in expected.items():
@@ -122,9 +124,9 @@ def validate(asset, target, revision, lock=None):
         required = ("include/llvm-c/Core.h", "include/lld/Common/Driver.h",
                     "include/binaryen-c.h", "include/zlib.h", "include/zstd.h")
         for relative in required:
-            if f"{target}/{relative}" not in names:
+            if relative not in names:
                 raise ValueError(f"missing header: {relative}")
-        libraries = {PurePosixPath(name).name for name in names if name.startswith(f"{target}/lib/")}
+        libraries = {PurePosixPath(name).name for name in names if name.startswith("lib/")}
         # Zig's Windows GNU archives may use either the .a or .lib spelling.
         for library in ("LLVMCore", "LLVMSupport", "LLVMDTLTO", "LLVMPlugins", "LLVMFrontendDirective",
                         "lldCommon", "lldELF", "lldCOFF", "lldMachO", "binaryen", "z", "zstd"):
@@ -132,10 +134,10 @@ def validate(asset, target, revision, lock=None):
             if not libraries & alternatives:
                 raise ValueError(f"missing static library: {library}")
             filename = sorted(libraries & alternatives)[0]
-            with open_member(f"{target}/lib/{filename}") as stream:
+            with open_member(f"lib/{filename}") as stream:
                 verify_library(stream, target)
         for name in names:
-            relative = PurePosixPath(name).relative_to(target)
+            relative = PurePosixPath(name)
             if relative.parts and relative.parts[0] == "lib" and re.search(r"\.(?:so(?:\..*)?|dylib|dll)$", relative.name):
                 raise ValueError(f"shared runtime dependency: {name}")
         return metadata

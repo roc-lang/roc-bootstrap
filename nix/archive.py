@@ -11,7 +11,9 @@ import zipfile
 
 
 def archive(source: Path, output: Path, target: str) -> Path:
-    entries = [source, *sorted(source.rglob("*"), key=lambda p: p.relative_to(source).as_posix())]
+    # Dependency paths resolve include/, lib/, and metadata at the package root.
+    # A wrapper directory also breaks Zig 0.17's standalone-fetch cache packing.
+    entries = sorted(source.rglob("*"), key=lambda p: p.relative_to(source).as_posix())
     windows = "-windows-" in target
     destination = output / (target + (".zip" if windows else ".tar.xz"))
 
@@ -19,7 +21,7 @@ def archive(source: Path, output: Path, target: str) -> Path:
         with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as result:
             for path in entries:
                 relative = path.relative_to(source).as_posix()
-                name = target if relative == "." else f"{target}/{relative}"
+                name = relative
                 info = zipfile.ZipInfo(name + ("/" if path.is_dir() else ""), (1980, 1, 1, 0, 0, 0))
                 info.create_system = 3
                 info.compress_type = zipfile.ZIP_DEFLATED
@@ -37,7 +39,7 @@ def archive(source: Path, output: Path, target: str) -> Path:
             with tarfile.open(fileobj=compressed, mode="w|", format=tarfile.GNU_FORMAT) as result:
                 for path in entries:
                     relative = path.relative_to(source).as_posix()
-                    name = target if relative == "." else f"{target}/{relative}"
+                    name = relative
                     info = result.gettarinfo(str(path), arcname=name)
                     info.uid = info.gid = 0
                     info.uname = info.gname = ""

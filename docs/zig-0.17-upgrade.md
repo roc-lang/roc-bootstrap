@@ -68,11 +68,12 @@ invalidation checks; further full rebuilds are useful when the toolchain or
 recipes change.
 
 Roc performance measurements use `ReleaseFast`, `-Dstrip=false`, four jobs,
-separate Zig caches, an isolated Roc application cache, and the same source
-revision for the pre-upgrade baseline. Dependency download time is reported
-separately where possible. Cold configure, cold compile, warm rebuild, and
+separate Zig caches, an isolated Roc application cache, and recorded baseline
+and migrated source snapshots on the same host. Dependency download time is
+reported separately where possible. Cold configure, cold compile, warm rebuild, and
 generated-file work are distinct measurements. Correctness tests use Debug or
-ReleaseSafe separately. No speedup is claimed until both versions are measured.
+ReleaseSafe separately. The measured compiler build times below do not establish
+a substantial speedup; the demonstrated improvement is application-cache reuse.
 
 The Roc validation matrix covers unchanged warm builds; production/test-only
 edits; imported Roc module edit/add/delete; missing installed/generated files;
@@ -88,10 +89,11 @@ Generators retain normal caching on unchanged inputs.
 
 ## Local validation record
 
-Implementation and validation are in progress. The source import, retained
-patch audit, and LLVM assertion harness are complete. Nix stage builds, Roc
-correctness tests, measured cache behavior, release asset hashes, and GitHub
-attestations are recorded here as those checks finish.
+The source import, retained patch audit, LLVM assertion harness, and complete
+x86_64 Linux Nix dependency build are validated locally. Roc correctness and
+measured cache results are recorded below. Independent compiled-output
+reproduction, the other seven release targets, and GitHub release provenance
+remain gates for the release workflow; no release has been published.
 
 Checks completed locally:
 
@@ -142,6 +144,22 @@ Checks completed locally:
 * The full Roc eval module passes 69 tests without skips in `ReleaseSafe` on
   x86_64 Linux musl, using the complete LLVM 22.1.8 bundle. All 34 build steps
   pass, including linking the migrated C++ bridge and LLVM/LLD libraries.
+* The parallel backend harness exposed a Zig 0.17 LLVM builder semantic change:
+  integer narrowing acquired `nuw`/`nsw` flags, which introduce poison for
+  valid wrapping casts and negative 128-bit limb extraction. Roc now emits
+  ordinary truncation explicitly, retaining its previous semantics. The
+  actual-helper IR check passes signed/unsigned wrapping and extension
+  controls. The final compiler at `2284e3455f` passes all 152 Debug build steps
+  and ten native CLI/execute checks, including signed minima and signed/unsigned
+  128-bit formatting in interpreter, dev, and LLVM speed modes. Evidence is
+  retained at `/tmp/roc-017-signed-llvm-debug-lqsffvjk/coerce-results.json` and
+  `/tmp/roc-017-final-llvm-native-71chshk_/results.json`.
+* With that correction, all 30 focused cases pass on all four backends. The
+  complete parallel `ReleaseSafe` suite passes 2,435 of 2,477 cases, with 42
+  skips and no failures, crashes, or timeouts. Backend rows report interpreter
+  2,337 passes, dev 2,337 passes, WASM 2,295 passes/42 skips, and LLVM 2,300
+  passes/37 skips. Exact arguments, logs, and final statistics are retained in
+  `/tmp/roc-017-full-parallel-eval/`, including `stats-retry-2.json`.
 * The complete native Debug compiler builds all 152 steps. Its CLI passes
   32 native checks: five fresh interpreter/dev/build/execute controls,
   native dev/size/speed build-and-run, package check/test, and repeated
@@ -214,10 +232,10 @@ and executes the ELF driver, exercises Binaryen, and compresses data with
 zlib and zstd. The bundle and resulting probe have no Nix store references;
 the probe has no dynamic interpreter.
 
-The actual x86_64 release archive passes source/lock metadata, required-library,
-and object architecture validation. Its 2,650 entries have normalized sorting,
-timestamps, ownership, and permissions. Archive assembly `--rebuild` and a
-separate saved-file comparison produce identical bytes. The locally validated
+The initial wrapped x86_64 release archive passed source/lock metadata,
+required-library, and object architecture validation. Its 2,650 entries had
+normalized sorting, timestamps, ownership, and permissions. Archive assembly
+`--rebuild` and a separate saved-file comparison produced identical bytes. That
 archive is from commit `4638291a35af1baf5b1d075908f2fbf2f30a37a2`; its SHA256 is
 `3a5c35d79839a16e8ad053c4fd9e3f83e2f3935f1f4400a152f880e4c4ac0e21`.
 This is a local validation artifact, not a published release pin or an
@@ -227,6 +245,27 @@ passed: only metadata and bundle assembly ran, with every compilation reused
 and no GitHub attestation API dependency. Independent compiled-output
 reproduction and complete bundles for the other seven targets remain release
 CI gates.
+
+The subsequent hashed-package consumer check exposed a stock Zig 0.17 cache
+defect in that wrapped archive format: standalone `zig fetch` hashes the detected
+package root but recompresses its enclosing temporary directory. A consumer
+then hashes the extra target directory and rejects the cached package. Direct
+consumer fetching works, so the existing Roc dependency paths need no change.
+Release archives now contain `include/`, `lib/`, and `roc-deps-build.json` at
+their root; the target remains in the filename and metadata. This supports both
+fetch modes without a Zig patch. The original wrapped archive is diagnostic
+evidence, not the final release format.
+
+The permanent `ci/test-package-consumption.py` check passes 18 commands covering
+TAR and ZIP standalone fetch, consumption from the global cache, explicit fresh
+package directories, repeated builds, exact paths and bytes, wrong-hash and
+corrupted-byte rejection, and restoration. Cached consumers issue no additional
+HTTP requests; the fixture server uses loopback only. It passes with official
+Zig 0.17 and the source-built host tools in the Nix sandbox. Ordinary bootstrap
+CI downloads Zig from ziglang.org using its pinned archive SHA256, while release
+CI reuses its built host tools. Neither check uses the attestation API. Evidence
+is retained at `/tmp/roc-017-package-consumption-script-final/results.json` and
+`/tmp/roc-zig-017-validation/package-cache-sandbox-check.log`.
 
 Successful build-phase durations with four-core budgets were 44m45s for native
 LLVM (GCC 15.2, Release/O3), 13m02s for host Zig (ReleaseFast, stripped), 29m25s
@@ -268,7 +307,9 @@ mode/target objects pass, including the original formatter collision as a
 negative control. The corrected compiler at `6b3ff0b659` passes all 152 Debug
 build steps, interpreter/dev/cached native controls, and an emitted LLVM
 speed-mode executable. Its new compatibility namespace separates it from
-caches authored by the earlier incomplete hash. The actual-module regression
+caches authored by the earlier incomplete hash; the subsequent `2284e3455f`
+LLVM conversion fix has also passed the final native controls listed above.
+The actual-module regression
 is kept in Roc's `ci/test_compiler_artifact_identity.py`; its local results are
 retained at `/tmp/roc-017-artifact-identity-corrected/results.json`.
 

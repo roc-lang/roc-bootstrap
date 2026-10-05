@@ -103,8 +103,11 @@ nix build .#deps-aarch64-macos-none
 nix develop
 ```
 
-`release-<target>` produces a normalized archive with a `<target>/` top-level
-directory. `deps-<target>` exposes its `include/` and `lib/` directly. The default
+`release-<target>` produces a normalized archive with `include/`, `lib/`, and
+`roc-deps-build.json` at its root. The target appears in the filename and
+metadata. This layout supports Zig 0.17's hashed package cache, including
+standalone fetch followed by a consumer build. `deps-<target>` exposes its
+`include/` and `lib/` directly. The default
 package is the builder architecture's Linux musl dependency bundle. `release`
 builds all eight archives. Each bundle includes `roc-deps-build.json` describing
 its source revision, component versions, target, baseline CPU, builder, and

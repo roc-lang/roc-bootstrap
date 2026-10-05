@@ -6,6 +6,8 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import tarfile
+import zipfile
 
 
 sys.dont_write_bytecode = True
@@ -40,4 +42,14 @@ with tempfile.TemporaryDirectory() as temporary:
         assert one.read_bytes() == two.read_bytes(), target
         checksum = (result_one / (target + ".sha256")).read_text()
         assert checksum == f"{hashlib.sha256(one.read_bytes()).hexdigest()}  {one.name}\n"
+        if "windows" in target:
+            with zipfile.ZipFile(one) as package:
+                members = {entry.filename for entry in package.infolist() if not entry.is_dir()}
+                assert members == set(contents)
+                assert all(package.read(name) == value for name, value in contents.items())
+        else:
+            with tarfile.open(one, "r:xz") as package:
+                members = {entry.name for entry in package.getmembers() if entry.isfile()}
+                assert members == set(contents)
+                assert all(package.extractfile(name).read() == value for name, value in contents.items())
 print("tar.xz and zip normalization checks passed")

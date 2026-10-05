@@ -27,9 +27,9 @@ class ReleasePolicy(unittest.TestCase):
                     "builderSystem": "x86_64-linux", "nixpkgsRevision": "b" * 40,
                     "flakeLockSha256": "c" * 64}
         metadata.update(changes or {})
-        files = {f"{target}/roc-deps-build.json": json.dumps(metadata).encode()}
+        files = {"roc-deps-build.json": json.dumps(metadata).encode()}
         for header in ("llvm-c/Core.h", "lld/Common/Driver.h", "binaryen-c.h", "zlib.h", "zstd.h"):
-            files[f"{target}/include/{header}"] = b"synthetic header"
+            files[f"include/{header}"] = b"synthetic header"
         for library in ("LLVMCore", "LLVMSupport", "LLVMDTLTO", "LLVMPlugins", "LLVMFrontendDirective",
                         "lldCommon", "lldELF", "lldCOFF", "lldMachO", "binaryen", "z", "zstd"):
             if "windows" in target:
@@ -37,9 +37,9 @@ class ReleasePolicy(unittest.TestCase):
             else:
                 contents = b"\x7fELF\x02\x01" + bytes(12) + (62).to_bytes(2, "little")
             header = b"object.o/       " + b"0           " + b"0     " + b"0     " + b"100644  " + str(len(contents)).encode().ljust(10) + b"`\n"
-            files[f"{target}/lib/lib{library}.a"] = b"!<arch>\n" + header + contents
+            files[f"lib/lib{library}.a"] = b"!<arch>\n" + header + contents
         if omit:
-            del files[f"{target}/{omit}"]
+            del files[omit]
         files.update(extra or {})
         suffix = ".zip" if "windows" in target else ".tar.xz"
         asset = Path(self.directory.name) / (target + suffix)
@@ -71,9 +71,14 @@ class ReleasePolicy(unittest.TestCase):
                 validator.validate(self.bundle(omit=f"lib/lib{library}.a"), "x86_64-linux-musl", REVISION)
 
     def test_rejects_path_escape(self):
-        for name in ("../outside", "/absolute", "x86_64-linux-musl/../../outside", "wrong-root/header"):
+        for name in ("../outside", "/absolute", "include/../../outside", "wrong-root/header"):
             with self.subTest(name=name), self.assertRaises(ValueError):
                 validator.validate(self.bundle(extra={name: b"invalid"}), "x86_64-linux-musl", REVISION)
+
+    def test_rejects_wrapped_package_layout(self):
+        for target in ("x86_64-linux-musl", "aarch64-windows-gnu"):
+            with self.subTest(target=target), self.assertRaisesRegex(ValueError, "package root"):
+                validator.validate(self.bundle(target, extra={f"{target}/include/api.h": b"nested"}), target, REVISION)
 
     def test_rejects_symlink(self):
         asset = self.bundle()
@@ -82,7 +87,7 @@ class ReleasePolicy(unittest.TestCase):
         with tarfile.open(asset, "w:xz") as archive:
             for entry, contents in members:
                 archive.addfile(entry, io.BytesIO(contents))
-            link = tarfile.TarInfo("x86_64-linux-musl/lib/external")
+            link = tarfile.TarInfo("lib/external")
             link.type = tarfile.SYMTYPE
             link.linkname = "/nix/store/unavailable/lib.a"
             archive.addfile(link)
