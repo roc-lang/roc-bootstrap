@@ -143,8 +143,12 @@ probe before compilation and checks a compiled native libc executable during
 installation. Its initial native-target package passed the sandbox build and
 installation check, and a separate sandbox probe compiled and ran a native
 libc/zlib program with Nix's compiler and linker flags intact. The subsequent
-explicit-target recipe removes host-kernel detection; compilation passes, but
-its final installation validation remains pending an ELF fixup correction.
+explicit-target recipe removes host-kernel detection and passes the complete
+sandbox build, installation check, and native libc/zlib probe with ordinary
+Nix compiler/linker flags and no explicit libc file or loader overrides.
+CMake already strips its Release compiler; disabling the redundant Linux
+binutils stripping pass avoids an observed ELF string-table corruption after
+RPATH expansion. All checks execute without `LD_LIBRARY_PATH`.
 All four supported Nix system definitions evaluate. Darwin has not received
 the Linux target-pinning correction or a reproducibility validation.
 
@@ -170,8 +174,28 @@ export took 126.37 seconds; importing into an empty store took 3.92 seconds.
 The warm host-tools build took 1.41 seconds. These are stage validation costs,
 not a controlled Zig version performance comparison.
 
-The x86_64 musl zlib, zstd, and Binaryen stages are complete. Target LLVM/LLD,
-bundle assembly, and the full static libc++ link/run probe remain pending.
+The complete x86_64 musl bundle is built. Its sandbox static libc++ probe runs
+LLVM module operations and every target initializer, links all LLD drivers
+and executes the ELF driver, exercises Binaryen, and compresses data with
+zlib and zstd. The bundle and resulting probe have no Nix store references;
+the probe has no dynamic interpreter.
+
+The actual x86_64 release archive passes source/lock metadata, required-library,
+and object architecture validation. Its 2,650 entries have normalized sorting,
+timestamps, ownership, and permissions. Archive assembly `--rebuild` and a
+separate saved-file comparison produce identical bytes. The locally validated
+archive is from commit `4638291a35af1baf5b1d075908f2fbf2f30a37a2`; its SHA256 is
+`3a5c35d79839a16e8ad053c4fd9e3f83e2f3935f1f4400a152f880e4c4ac0e21`.
+This is a local validation artifact, not a published release pin or an
+attestation. Assembling metadata for this integration branch reused every
+compiled stage. Independent compiled-output reproduction and complete bundles
+for the other seven targets remain release CI gates.
+
+Successful build-phase durations with four-core budgets were 44m45s for native
+LLVM (GCC 15.2, Release/O3), 13m02s for host Zig (ReleaseFast, stripped), 29m25s
+for target LLVM (Zig C++, Release/O3), and 6m14s for Binaryen (Zig C++,
+Release/O3). These are validation costs, not a controlled performance comparison.
+The unchanged complete-release command took 1.93 seconds.
 
 The initial Roc 0.16 baseline is from `ce7b298cacaee79e7dbcaba3b6cde6d8f3d73bf9`
 on the same host, using four build jobs. Cold configure (`zig build --help` with
