@@ -84,9 +84,10 @@ significantly affect how long it takes to build:
 
  * `CMAKE_GENERATOR` can be used to select a different generator instead of the
    default. For example, `CMAKE_GENERATOR=Ninja`.
- * `CMAKE_BUILD_PARALLEL_LEVEL` can be used to introduce parallelism to build
-   systems (such as make) which do not default to parallel builds. This option
-   is irrelevant when using Ninja.
+ * `BOOTSTRAP_JOBS` sets the stage build concurrency. If unset, stages use
+   `CMAKE_BUILD_PARALLEL_LEVEL`, then default to two jobs. This applies to Ninja
+   as well as Make. The Nix development shell defaults to four jobs; Nix package
+   builds use at most four jobs and restrict target-stage CPU affinity.
 
 When it succeeds, the dependency bundle is in `out/<target>-<cpu>/`.
 
@@ -107,7 +108,7 @@ directory. `deps-<target>` exposes its `include/` and `lib/` directly. The defau
 package is the builder architecture's Linux musl dependency bundle. `release`
 builds all eight archives. Each bundle includes `roc-deps-build.json` describing
 its source revision, component versions, target, baseline CPU, builder, and
-flake lock. Release builds require a clean committed source tree.
+flake lock. CI releases require a clean committed source tree.
 
 Native LLVM, host Zig, zlib, zstd, target LLVM/LLD, and Binaryen are separate
 derivations. Edits to documentation and release metadata reuse compiled stages;

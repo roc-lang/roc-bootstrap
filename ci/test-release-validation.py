@@ -31,7 +31,12 @@ class ReleasePolicy(unittest.TestCase):
         for header in ("llvm-c/Core.h", "lld/Common/Driver.h", "binaryen-c.h", "zlib.h", "zstd.h"):
             files[f"{target}/include/{header}"] = b"synthetic header"
         for library in ("LLVMCore", "LLVMSupport", "lldCommon", "lldELF", "lldCOFF", "lldMachO", "binaryen", "z", "zstd"):
-            files[f"{target}/lib/lib{library}.a"] = b"!<arch>\n"
+            if "windows" in target:
+                contents = (0xAA64 if target.startswith("aarch64") else 0x8664).to_bytes(2, "little") + bytes(18)
+            else:
+                contents = b"\x7fELF\x02\x01" + bytes(12) + (62).to_bytes(2, "little")
+            header = b"object.o/       " + b"0           " + b"0     " + b"0     " + b"100644  " + str(len(contents)).encode().ljust(10) + b"`\n"
+            files[f"{target}/lib/lib{library}.a"] = b"!<arch>\n" + header + contents
         if omit:
             del files[f"{target}/{omit}"]
         files.update(extra or {})
@@ -87,6 +92,18 @@ class ReleasePolicy(unittest.TestCase):
         lock.write_text("{}")
         with self.assertRaises(ValueError):
             validator.validate(self.bundle(), "x86_64-linux-musl", REVISION, lock)
+
+    def test_rejects_wrong_architecture(self):
+        asset = self.bundle()
+        with tarfile.open(asset, "r:xz") as archive:
+            members = [(entry, archive.extractfile(entry).read()) for entry in archive]
+        with tarfile.open(asset, "w:xz") as archive:
+            for entry, contents in members:
+                if entry.name.endswith("libbinaryen.a"):
+                    contents = contents[:-2] + (183).to_bytes(2, "little")
+                archive.addfile(entry, io.BytesIO(contents))
+        with self.assertRaisesRegex(ValueError, "architecture mismatch"):
+            validator.validate(asset, "x86_64-linux-musl", REVISION)
 
 
 if __name__ == "__main__":

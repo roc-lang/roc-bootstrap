@@ -79,7 +79,8 @@ Checks completed locally:
 * Isolated input edits verify the cache boundary across 35 compilation
   derivations: documentation/workflow and provenance-only edits reuse all
   compilation; Binaryen edits change only its eight compilation derivations.
-* Six release-validator policy tests pass. Workflow actionlint and provenance
+* Seven release-validator policy tests pass, including static-library target
+  architecture checks. Workflow actionlint and provenance
   script shellcheck pass. These are local definition checks, not attestations.
 * Roc's LLVM vendor tests pass in Zig 0.17 `ReleaseSafe`, covering target layout,
   ordered entry allocas, bitcode serialization, and successive module assembly.
