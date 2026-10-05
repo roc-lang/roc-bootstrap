@@ -122,13 +122,23 @@ let
     src = nativeLlvmSource;
     script = ./stages/native-llvm.sh;
   };
-  hostZig = stage {
-    name = "host-zig";
-    version = versions.zig;
-    src = zigSource;
-    script = ./stages/host-zig.sh;
-    arguments = [ (toString nativeLlvm) ];
-  };
+  hostZig =
+    (stage {
+      name = "host-zig";
+      version = versions.zig;
+      src = zigSource;
+      script = ./stages/host-zig.sh;
+      arguments = [ (toString nativeLlvm) ];
+    }).overrideAttrs
+      (_: {
+        # Native ABI/linker detection probes env as an ELF binary. The sandbox has
+        # no /usr/bin/env; use the pinned Nix executable, as nixpkgs' Zig package
+        # does, so both the build runner and installed compiler use the Nix libc.
+        postPatch = ''
+          substituteInPlace zig/lib/std/zig/system.zig \
+            --replace-fail '"/usr/bin/env"' '"${lib.getExe' pkgs.coreutils "env"}"'
+        '';
+      });
   hostTools =
     pkgs.runCommand "roc-bootstrap-host-tools-${versions.zig}"
       {
