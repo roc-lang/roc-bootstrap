@@ -126,7 +126,7 @@ def validate(asset, target, revision, lock=None):
                 raise ValueError(f"missing header: {relative}")
         libraries = {PurePosixPath(name).name for name in names if name.startswith(f"{target}/lib/")}
         # Zig's Windows GNU archives may use either the .a or .lib spelling.
-        for library in ("LLVMCore", "LLVMSupport", "LLVMPlugins", "LLVMFrontendDirective",
+        for library in ("LLVMCore", "LLVMSupport", "LLVMDTLTO", "LLVMPlugins", "LLVMFrontendDirective",
                         "lldCommon", "lldELF", "lldCOFF", "lldMachO", "binaryen", "z", "zstd"):
             alternatives = {f"lib{library}.a", f"{library}.lib", f"lib{library}.lib"}
             if not libraries & alternatives:

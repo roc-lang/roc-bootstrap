@@ -30,7 +30,7 @@ class ReleasePolicy(unittest.TestCase):
         files = {f"{target}/roc-deps-build.json": json.dumps(metadata).encode()}
         for header in ("llvm-c/Core.h", "lld/Common/Driver.h", "binaryen-c.h", "zlib.h", "zstd.h"):
             files[f"{target}/include/{header}"] = b"synthetic header"
-        for library in ("LLVMCore", "LLVMSupport", "LLVMPlugins", "LLVMFrontendDirective",
+        for library in ("LLVMCore", "LLVMSupport", "LLVMDTLTO", "LLVMPlugins", "LLVMFrontendDirective",
                         "lldCommon", "lldELF", "lldCOFF", "lldMachO", "binaryen", "z", "zstd"):
             if "windows" in target:
                 contents = (0xAA64 if target.startswith("aarch64") else 0x8664).to_bytes(2, "little") + bytes(18)
@@ -66,7 +66,7 @@ class ReleasePolicy(unittest.TestCase):
                 validator.validate(self.bundle(changes=changes), "x86_64-linux-musl", REVISION)
 
     def test_rejects_incomplete_bundle(self):
-        for library in ("binaryen", "LLVMPlugins", "LLVMFrontendDirective"):
+        for library in ("binaryen", "LLVMDTLTO", "LLVMPlugins", "LLVMFrontendDirective"):
             with self.subTest(library=library), self.assertRaisesRegex(ValueError, "missing static library"):
                 validator.validate(self.bundle(omit=f"lib/lib{library}.a"), "x86_64-linux-musl", REVISION)
 

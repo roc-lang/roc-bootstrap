@@ -103,7 +103,10 @@ Checks completed locally:
   compilation; Binaryen edits change only its eight compilation derivations.
 * Seven release-validator policy tests pass, including static-library target
   architecture checks and rejection of missing LLVM 22's newly split
-  `LLVMPlugins` and `LLVMFrontendDirective` libraries. Workflow actionlint and provenance
+  `LLVMDTLTO`, `LLVMPlugins`, and `LLVMFrontendDirective` libraries. Full Roc
+  eval linking exposed the missing DTLTO link dependency of LLVM 22's COFF
+  driver; the bundle already contains it and Roc's ordered link list now
+  includes it. Workflow actionlint and provenance
   script shellcheck pass. These are local definition checks, not attestations.
 * Roc's LLVM vendor tests pass in Zig 0.17 `ReleaseSafe`, covering target layout,
   ordered entry allocas, bitcode serialization, and successive module assembly.
