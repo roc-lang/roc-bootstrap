@@ -36,5 +36,6 @@ jobs:
           nix build --no-update-lock-file .#checks.x86_64-linux.archives
           python3 nix/check-cache-inputs.py
           python3 ci/test-release-validation.py
+          python3 ci/test-monitor-build.py
           for script in build nix/stages/*.sh; do sh -n "$script"; done
           bash -n ci/verify-provenance.sh

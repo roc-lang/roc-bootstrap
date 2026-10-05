@@ -2,7 +2,9 @@
 """Retain Linux build diagnostics, including the daemon servicing a Nix client."""
 
 import argparse
+import base64
 import datetime
+import hashlib
 import json
 import math
 import os
@@ -34,7 +36,8 @@ def processes():
                 for line in (directory / "status").read_text().splitlines()
                 if ":" in line
             )
-            argv = (directory / "cmdline").read_bytes().split(b"\0")
+            cmdline = (directory / "cmdline").read_bytes()
+            argv = cmdline.split(b"\0")
             result[int(directory.name)] = {
                 "pid": int(directory.name),
                 "ppid": int(fields[1]),
@@ -46,6 +49,8 @@ def processes():
                 "threads": int(status["Threads"]),
                 "allowedCpus": status["Cpus_allowed_list"].strip(),
                 "argv": [value.decode(errors="replace") for value in argv if value],
+                "cmdlineBase64": base64.b64encode(cmdline).decode("ascii"),
+                "cmdlineSha256": hashlib.sha256(cmdline).hexdigest(),
             }
         except (OSError, ValueError, KeyError, IndexError):
             # A process may exit between procfs reads. Count these missing
@@ -141,7 +146,7 @@ def main():
         "rssLimitations": "Samples may miss short-lived processes and instantaneous peaks. Summed RSS may count shared pages multiple times. Unreadable or exited processes are counted separately.",
         "intervalSeconds": args.interval,
         "cgroupScope": "Kernel counters for each observed unified cgroup and every ancestor through /sys/fs/cgroup. Ancestor limits also constrain leaves. A group may contain other processes, and memory.peak is cumulative group evidence, not this command's peak. Missing files and read errors remain explicit.",
-        "processMetadataScope": "Command lines, limits and cgroup membership are captured when a process is first observed and when its command line changes across exec; metadata includes the observation time and process start ticks.",
+        "processMetadataScope": "Rendered command lines, raw NUL-separated command-line bytes as base64 with SHA-256, limits and cgroup membership are captured when a process is first observed and when its command-line bytes change across exec; metadata includes the observation time and process start ticks. No environment is captured.",
     })
     write("cgroups-before.json", [cgroup_state(path) for path in cgroup_hierarchy(runner_group)] if runner_group else [])
     started = time.monotonic()
@@ -212,8 +217,8 @@ def main():
                 for pid in sorted(selected):
                     entry = table[pid]
                     identity = (pid, entry["startTicks"])
-                    if known_processes.get(identity) != entry["argv"]:
-                        known_processes[identity] = entry["argv"]
+                    if known_processes.get(identity) != entry["cmdlineSha256"]:
+                        known_processes[identity] = entry["cmdlineSha256"]
                         cgroup = read_optional(Path(f"/proc/{pid}/cgroup"))
                         group = unified_cgroup(cgroup)
                         if group:
