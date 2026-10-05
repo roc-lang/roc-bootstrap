@@ -4,7 +4,19 @@ source_root=$1
 build_dir=$2
 install_prefix=$3
 mkdir -p "$build_dir"
-cmake -S "$source_root/llvm" -B "$build_dir" \
+# Zig needs LLVM's development libraries and llvm-config, while the cross
+# stages need these archive/resource tools. LLVM's supported per-tool options
+# avoid compiling and installing unrelated executables without changing the
+# Clang/LLD libraries used by Zig. llvm-tblgen is built separately under utils.
+set --
+for tool_cmake in "$source_root"/llvm/tools/*/CMakeLists.txt; do
+    tool_dir=${tool_cmake%/CMakeLists.txt}
+    tool_name=${tool_dir##*/}
+    case "$tool_name" in llvm-ar|llvm-config|llvm-rc) continue ;; esac
+    tool_option=$(printf '%s' "$tool_name" | tr '[:lower:]-' '[:upper:]_')
+    set -- "$@" "-DLLVM_TOOL_${tool_option}_BUILD=OFF"
+done
+cmake "$@" -S "$source_root/llvm" -B "$build_dir" \
     -DCMAKE_INSTALL_PREFIX="$install_prefix" \
     -DCMAKE_BUILD_TYPE="${BOOTSTRAP_BUILD_TYPE:-Release}" \
     -DCMAKE_INSTALL_LIBDIR=lib \
@@ -28,10 +40,7 @@ cmake -S "$source_root/llvm" -B "$build_dir" \
     -DLLVM_INCLUDE_DOCS=OFF \
     -DLLVM_PARALLEL_LINK_JOBS=1 \
     -DLLVM_PARALLEL_TABLEGEN_JOBS=2 \
-    -DLLVM_TOOL_LLVM_LTO2_BUILD=OFF \
-    -DLLVM_TOOL_LLVM_LTO_BUILD=OFF \
-    -DLLVM_TOOL_LTO_BUILD=OFF \
-    -DLLVM_TOOL_REMARKS_SHLIB_BUILD=OFF \
+    -DLLD_BUILD_TOOLS=OFF \
     -DCLANG_BUILD_TOOLS=OFF \
     -DCLANG_INCLUDE_DOCS=OFF \
     -DCLANG_INCLUDE_TESTS=OFF \
