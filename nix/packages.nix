@@ -221,11 +221,9 @@ let
           {
             # Only the assembled release carries provenance; it cannot force any
             # compilation to repeat when the Git revision or documentation changes.
-            disallowedReferences = [
-              hostTools
-              nativeLlvm
-              hostZig
-            ];
+            # Headers and static archives must work after extraction on machines
+            # without Nix. Reject every store reference in the uncompressed bundle.
+            allowedReferences = [ ];
           }
           ''
             mkdir -p "$out/include" "$out/lib"
