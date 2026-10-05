@@ -126,10 +126,18 @@ def check(zig, archive_script, root):
                     ',.hash=' + json.dumps(value) + '}},.paths=.{"build.zig","build.zig.zon","probe.py"}}\n')
 
             def build(label, package_dir, succeeds=True, diagnostic=None):
-                return run(target + "-" + label,
-                           [str(zig), "build", "probe", "--cache-dir", str(consumer / "cache"),
-                            "--pkg-dir", str(package_dir), "--summary", "all"],
-                           consumer, succeeds, diagnostic)
+                # Zig 0.17 can retain dependency paths in a cached graph when
+                # only --pkg-dir changes. Configure each package root separately.
+                result = run(target + "-" + label,
+                             [str(zig), "build", "probe", "--cache-dir",
+                              str(consumer / ("cache-" + package_dir.name)),
+                              "--pkg-dir", str(package_dir), "--summary", "all"],
+                             consumer, succeeds, diagnostic)
+                if succeeds:
+                    probe = json.loads(result.stdout)
+                    if Path(probe["paths"][0]) != (package_dir / package_hash).resolve():
+                        raise RuntimeError("consumer retained a different package directory")
+                return result
 
             manifest(package_hash)
             count_before = len(requests)

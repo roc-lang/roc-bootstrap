@@ -264,8 +264,29 @@ HTTP requests; the fixture server uses loopback only. It passes with official
 Zig 0.17 and the source-built host tools in the Nix sandbox. Ordinary bootstrap
 CI downloads Zig from ziglang.org using its pinned archive SHA256, while release
 CI reuses its built host tools. Neither check uses the attestation API. Evidence
-is retained at `/tmp/roc-017-package-consumption-script-final/results.json` and
-`/tmp/roc-zig-017-validation/package-cache-sandbox-check.log`.
+is retained at `/tmp/roc-017-package-consumption-script-isolated/results.json` and
+`/tmp/roc-zig-017-validation/package-cache-sandbox-check-isolated.log`.
+
+The final flat x86_64 validation archive records source
+`1df6e1c163ce3115bc5d2bf27f290506440a5762`. It has 2,649 normalized entries and
+47,173,456 bytes; its SHA256 is
+`7a911ffd5f58cfe66b58b07c7c5b701739c46f6baf190b7e51bacd178d9e9f39`.
+Metadata, required libraries, and object architecture checks pass. Offline
+assembly `--rebuild` and a separate saved-file comparison produce identical
+bytes, with no compiled stage rerun. Actual standalone fetch and a subsequent
+consumer build resolve the expected headers, libraries, and clean source
+metadata. Fresh local/package directories and an unchanged repeat also pass
+after the fixture HTTP server stops. Its Zig package hash is
+`N-V-__8AAJZVFhn_Nd_0PDRq_LTb9kOniu9CqUsDIMkGw_E3`.
+These are local validation hashes, not published release pins. Evidence is
+retained at `/tmp/roc-zig-017-validation/flat-release-validation-results.json`
+and `/tmp/roc-017-real-flat-consumer-foxjxjoa/results.json`.
+
+The consumer check also found that changing only `--pkg-dir` can retain old
+dependency argument paths in Zig 0.17's cached build graph. Switch local
+`--cache-dir` and `--pkg-dir` together when selecting a different package root.
+The permanent regression uses separate local caches and asserts the actual
+resolved root, so fresh materialization cannot silently test the old directory.
 
 Successful build-phase durations with four-core budgets were 44m45s for native
 LLVM (GCC 15.2, Release/O3), 13m02s for host Zig (ReleaseFast, stripped), 29m25s
