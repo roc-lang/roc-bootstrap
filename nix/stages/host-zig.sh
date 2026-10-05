@@ -16,5 +16,5 @@ cmake -S "$source_root/zig" -B "$build_dir" \
     -DZIG_VERSION=0.17.0 \
     -DZIG_RELEASE_SAFE=OFF \
     -DZIG_TARGET_MCPU=baseline \
-    -DZIG_EXTRA_BUILD_ARGS="-j${BOOTSTRAP_JOBS:-${CMAKE_BUILD_PARALLEL_LEVEL:-2}}"
+    -DZIG_EXTRA_BUILD_ARGS="-j${BOOTSTRAP_JOBS:-${CMAKE_BUILD_PARALLEL_LEVEL:-2}};-Dno-langref=true"
 cmake --build "$build_dir" --target install --parallel "${BOOTSTRAP_JOBS:-${CMAKE_BUILD_PARALLEL_LEVEL:-2}}"

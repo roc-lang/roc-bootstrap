@@ -82,4 +82,10 @@ with tempfile.TemporaryDirectory(prefix=".cache-inputs-", dir=repository) as tem
     assert all(binaryen[name] == baseline[name] for name in compilation if not name.startswith("binaryen-")), "Binaryen invalidated another compilation stage"
     assert all(binaryen[name] != baseline[name] for name in compilation if name.startswith("binaryen-")), "Binaryen edit was missed"
     assert binaryen["deps-x86_64-linux-musl"] != baseline["deps-x86_64-linux-musl"], "Binaryen edit did not update assembly"
+    replace("binaryen/CMakeLists.txt", (repository / "binaryen/CMakeLists.txt").read_bytes())
+    host_script = fixture / "nix/stages/host-zig.sh"
+    replace("nix/stages/host-zig.sh", host_script.read_bytes() + b"\n# Host Zig recipe invalidation check\n")
+    host_recipe = paths()
+    assert host_recipe["native-llvm"] == baseline["native-llvm"], "Host Zig recipe invalidated native LLVM"
+    assert all(host_recipe[name] != baseline[name] for name in compilation if name != "native-llvm"), "Host Zig recipe did not invalidate a dependent compilation stage"
     print(f"Cache input checks passed across {len(compilation)} compilation derivations")
