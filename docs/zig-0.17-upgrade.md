@@ -131,6 +131,9 @@ Checks completed locally:
   bug: materializing hidden dictionary arguments could grow an array after
   capturing the destination pointer. Reacquiring the index after materializing
   the arguments fixes the regression; its focused 21-test suite also passes.
+* The full Roc eval module passes 69 tests without skips in `ReleaseSafe` on
+  x86_64 Linux musl, using the complete LLVM 22.1.8 bundle. All 34 build steps
+  pass, including linking the migrated C++ bridge and LLVM/LLD libraries.
 * Actual compiler-runtime object builds pass on FreeBSD, OpenBSD, NetBSD,
   x86_64 macOS (LLVM), and aarch64 macOS in Zig 0.17 `Debug`. Equivalent Zig 0.16
   controls crash on the three BSDs and x86_64 macOS. The obsolete BSD exclusion
