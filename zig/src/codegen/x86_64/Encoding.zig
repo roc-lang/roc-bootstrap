@@ -57,7 +57,7 @@ pub fn findByMnemonic(
 
     var shortest_enc: ?Encoding = null;
     var shortest_len: ?usize = null;
-    next: for (mnemonic_to_encodings_map[@intFromEnum(mnemonic)]) |data| {
+    next: for (mnemonic_to_encodings_map[@backingInt(mnemonic)]) |data| {
         if (!switch (data.feature) {
             .none => true,
             .@"32bit" => switch (target.cpu.arch) {
@@ -122,7 +122,7 @@ pub fn findByOpcode(opc: []const u8, prefixes: struct {
     rex: Rex,
 }, modrm_ext: ?u3) ?Encoding {
     for (mnemonic_to_encodings_map, 0..) |encs, mnemonic_int| for (encs) |data| {
-        const enc = Encoding{ .mnemonic = @as(Mnemonic, @enumFromInt(mnemonic_int)), .data = data };
+        const enc = Encoding{ .mnemonic = @as(Mnemonic, @fromBackingInt(@intCast(mnemonic_int))), .data = data };
         if (modrm_ext) |ext| if (ext != data.modrm_ext) continue;
         if (!std.mem.eql(u8, opc, enc.opcode())) continue;
         if (prefixes.rex.w) {
@@ -1028,9 +1028,9 @@ const mnemonic_to_encodings_map = init: {
     const Entry = struct { Mnemonic, OpEn, []const Op, []const u8, ModrmExt, Mode, Feature };
     const encodings: []const Entry = @import("encodings.zon");
 
-    const mnemonic_count = @typeInfo(Mnemonic).@"enum".fields.len;
+    const mnemonic_count = @typeInfo(Mnemonic).@"enum".field_names.len;
     var mnemonic_map: [mnemonic_count][]Data = @splat(&.{});
-    for (encodings) |entry| mnemonic_map[@intFromEnum(entry[0])].len += 1;
+    for (encodings) |entry| mnemonic_map[@backingInt(entry[0])].len += 1;
     var data_storage: [encodings.len]Data = undefined;
     var storage_index: usize = 0;
     for (&mnemonic_map) |*value| {
@@ -1041,12 +1041,20 @@ const mnemonic_to_encodings_map = init: {
     const ops_len = @typeInfo(@FieldType(Data, "ops")).array.len;
     const opc_len = @typeInfo(@FieldType(Data, "opc")).array.len;
     for (encodings) |entry| {
-        const index = &mnemonic_index[@intFromEnum(entry[0])];
-        mnemonic_map[@intFromEnum(entry[0])][index.*] = .{
+        const index = &mnemonic_index[@backingInt(entry[0])];
+        mnemonic_map[@backingInt(entry[0])][index.*] = .{
             .op_en = entry[1],
-            .ops = (entry[2] ++ .{.none} ** (ops_len - entry[2].len)).*,
+            .ops = ops: {
+                var ops: [ops_len]Op = @splat(.none);
+                @memcpy(ops[0..entry[2].len], entry[2]);
+                break :ops ops;
+            },
             .opc_len = entry[3].len,
-            .opc = (entry[3] ++ .{undefined} ** (opc_len - entry[3].len)).*,
+            .opc = opc: {
+                var opc: [opc_len]u8 = @splat(undefined);
+                @memcpy(opc[0..entry[3].len], entry[3]);
+                break :opc opc;
+            },
             .modrm_ext = entry[4],
             .mode = entry[5],
             .feature = entry[6],

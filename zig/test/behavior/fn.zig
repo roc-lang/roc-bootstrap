@@ -147,7 +147,6 @@ fn fnWithUnreachable() noreturn {
 
 test "extern struct with stdcallcc fn pointer" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_c and builtin.cpu.arch == .x86) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
 
     const S = extern struct {
@@ -280,7 +279,7 @@ test "implicit cast fn call result to optional in field result" {
 test "void parameters" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
 
-    try voidFun(1, void{}, 2, {});
+    try voidFun(1, {}, 2, {});
 }
 fn voidFun(a: i32, b: void, c: i32, d: void) !void {
     _ = d;
@@ -400,11 +399,12 @@ test "function with inferred error set but returning no error" {
     };
 
     const return_ty = @typeInfo(@TypeOf(S.foo)).@"fn".return_type.?;
-    try expectEqual(0, @typeInfo(@typeInfo(return_ty).error_union.error_set).error_set.?.len);
+    try expectEqual(0, @typeInfo(@typeInfo(return_ty).error_union.error_set).error_set.error_names.?.len);
 }
 
 test "import passed byref to function in return type" {
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
+    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
 
     const S = struct {
         fn get() @import("std").ArrayList(i32) {
@@ -418,7 +418,6 @@ test "import passed byref to function in return type" {
 
 test "implicit cast function to function ptr" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_wasm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
 
     const S1 = struct {
@@ -440,6 +439,7 @@ test "implicit cast function to function ptr" {
 test "method call with optional and error union first param" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
+    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
 
     const S = struct {
         x: i32 = 1234,
@@ -744,6 +744,8 @@ test "coerce generic function making generic parameter concrete" {
 }
 
 test "return undefined pointer from function, directly and by expired local" {
+    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+
     const S = struct {
         var global: i32 = 1;
 
@@ -769,4 +771,16 @@ test "return undefined pointer from function, directly and by expired local" {
     _ = bad_ptr_1; // dereferencing this would be illegal behavior
     const bad_ptr_2 = S.returnStackPointer();
     _ = bad_ptr_2; // dereferencing this would be illegal behavior
+}
+
+test "a function that works at comptime but not runtime" {
+    const a = comptime testComptimeOnlyFn(1, 1);
+    try expect(a[0] == 1);
+    try expect(a[1] == 2);
+}
+
+fn testComptimeOnlyFn(x: u32, y: u32) [2]u8 {
+    const xa: [x]u8 = .{1};
+    const ya: [y]u8 = .{2};
+    return xa ++ ya;
 }

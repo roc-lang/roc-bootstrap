@@ -48,8 +48,8 @@ pub const hello_retry_request_sequence = [32]u8{
 };
 
 pub const close_notify_alert = [_]u8{
-    @intFromEnum(Alert.Level.warning),
-    @intFromEnum(Alert.Description.close_notify),
+    @backingInt(Alert.Level.warning),
+    @backingInt(Alert.Description.close_notify),
 };
 
 pub const ProtocolVersion = enum(u16) {
@@ -595,7 +595,7 @@ pub fn hmac(comptime Hmac: type, message: []const u8, key: [Hmac.key_length]u8) 
 }
 
 pub fn extension(et: ExtensionType, bytes: anytype) [2 + 2 + bytes.len]u8 {
-    return int(u16, @intFromEnum(et)) ++ array(u16, u8, bytes);
+    return int(u16, @backingInt(et)) ++ array(u16, u8, bytes);
 }
 
 pub fn array(
@@ -614,7 +614,7 @@ pub fn array(
             arr[len_size + elem_size * index ..][0..elem_size],
             switch (@typeInfo(Elem)) {
                 .int => @as(Elem, elem),
-                .@"enum" => @intFromEnum(@as(Elem, elem)),
+                .@"enum" => @backingInt(@as(Elem, elem)),
                 else => @bitCast(@as(Elem, elem)),
             },
             .big,
@@ -666,7 +666,7 @@ pub const Decoder = struct {
         if (request_amt > dest.len) return error.TlsRecordOverflow;
         stream.readSlice(dest[0..request_amt]) catch |err| switch (err) {
             error.EndOfStream => return error.TlsConnectionTruncated,
-            error.ReadFailed => return error.ReadFailed,
+            error.ReadFailed => |e| return e,
         };
         d.cap += request_amt;
     }
@@ -710,8 +710,8 @@ pub const Decoder = struct {
                 else => @compileError("unsupported int type: " ++ @typeName(T)),
             },
             .@"enum" => |info| {
-                if (info.is_exhaustive) @compileError("exhaustive enum cannot be used");
-                return @enumFromInt(d.decode(info.tag_type));
+                if (info.mode == .exhaustive) @compileError("exhaustive enum cannot be used");
+                return @fromBackingInt(@intCast(d.decode(info.tag_type)));
             },
             else => @compileError("unsupported type: " ++ @typeName(T)),
         }

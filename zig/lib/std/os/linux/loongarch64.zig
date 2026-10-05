@@ -2,49 +2,71 @@ const builtin = @import("builtin");
 const std = @import("../../std.zig");
 const SYS = std.os.linux.SYS;
 
-pub fn syscall0(number: SYS) u64 {
+pub const syscall_arg_t = u64;
+
+pub fn syscall0(
+    number: SYS,
+) u64 {
     return asm volatile (
         \\ syscall 0
         : [ret] "={$r4}" (-> u64),
-        : [number] "{$r11}" (@intFromEnum(number)),
+        : [number] "{$r11}" (@backingInt(number)),
         : .{ .r12 = true, .r13 = true, .r14 = true, .r15 = true, .r16 = true, .r17 = true, .r18 = true, .r19 = true, .r20 = true, .memory = true });
 }
 
-pub fn syscall1(number: SYS, arg1: u64) u64 {
+pub fn syscall1(
+    number: SYS,
+    arg1: syscall_arg_t,
+) u64 {
     return asm volatile (
         \\ syscall 0
         : [ret] "={$r4}" (-> u64),
-        : [number] "{$r11}" (@intFromEnum(number)),
+        : [number] "{$r11}" (@backingInt(number)),
           [arg1] "{$r4}" (arg1),
         : .{ .r12 = true, .r13 = true, .r14 = true, .r15 = true, .r16 = true, .r17 = true, .r18 = true, .r19 = true, .r20 = true, .memory = true });
 }
 
-pub fn syscall2(number: SYS, arg1: u64, arg2: u64) u64 {
+pub fn syscall2(
+    number: SYS,
+    arg1: syscall_arg_t,
+    arg2: syscall_arg_t,
+) u64 {
     return asm volatile (
         \\ syscall 0
         : [ret] "={$r4}" (-> u64),
-        : [number] "{$r11}" (@intFromEnum(number)),
+        : [number] "{$r11}" (@backingInt(number)),
           [arg1] "{$r4}" (arg1),
           [arg2] "{$r5}" (arg2),
         : .{ .r12 = true, .r13 = true, .r14 = true, .r15 = true, .r16 = true, .r17 = true, .r18 = true, .r19 = true, .r20 = true, .memory = true });
 }
 
-pub fn syscall3(number: SYS, arg1: u64, arg2: u64, arg3: u64) u64 {
+pub fn syscall3(
+    number: SYS,
+    arg1: syscall_arg_t,
+    arg2: syscall_arg_t,
+    arg3: syscall_arg_t,
+) u64 {
     return asm volatile (
         \\ syscall 0
         : [ret] "={$r4}" (-> u64),
-        : [number] "{$r11}" (@intFromEnum(number)),
+        : [number] "{$r11}" (@backingInt(number)),
           [arg1] "{$r4}" (arg1),
           [arg2] "{$r5}" (arg2),
           [arg3] "{$r6}" (arg3),
         : .{ .r12 = true, .r13 = true, .r14 = true, .r15 = true, .r16 = true, .r17 = true, .r18 = true, .r19 = true, .r20 = true, .memory = true });
 }
 
-pub fn syscall4(number: SYS, arg1: u64, arg2: u64, arg3: u64, arg4: u64) u64 {
+pub fn syscall4(
+    number: SYS,
+    arg1: syscall_arg_t,
+    arg2: syscall_arg_t,
+    arg3: syscall_arg_t,
+    arg4: syscall_arg_t,
+) u64 {
     return asm volatile (
         \\ syscall 0
         : [ret] "={$r4}" (-> u64),
-        : [number] "{$r11}" (@intFromEnum(number)),
+        : [number] "{$r11}" (@backingInt(number)),
           [arg1] "{$r4}" (arg1),
           [arg2] "{$r5}" (arg2),
           [arg3] "{$r6}" (arg3),
@@ -52,11 +74,18 @@ pub fn syscall4(number: SYS, arg1: u64, arg2: u64, arg3: u64, arg4: u64) u64 {
         : .{ .r12 = true, .r13 = true, .r14 = true, .r15 = true, .r16 = true, .r17 = true, .r18 = true, .r19 = true, .r20 = true, .memory = true });
 }
 
-pub fn syscall5(number: SYS, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) u64 {
+pub fn syscall5(
+    number: SYS,
+    arg1: syscall_arg_t,
+    arg2: syscall_arg_t,
+    arg3: syscall_arg_t,
+    arg4: syscall_arg_t,
+    arg5: syscall_arg_t,
+) u64 {
     return asm volatile (
         \\ syscall 0
         : [ret] "={$r4}" (-> u64),
-        : [number] "{$r11}" (@intFromEnum(number)),
+        : [number] "{$r11}" (@backingInt(number)),
           [arg1] "{$r4}" (arg1),
           [arg2] "{$r5}" (arg2),
           [arg3] "{$r6}" (arg3),
@@ -67,17 +96,17 @@ pub fn syscall5(number: SYS, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u
 
 pub fn syscall6(
     number: SYS,
-    arg1: u64,
-    arg2: u64,
-    arg3: u64,
-    arg4: u64,
-    arg5: u64,
-    arg6: u64,
+    arg1: syscall_arg_t,
+    arg2: syscall_arg_t,
+    arg3: syscall_arg_t,
+    arg4: syscall_arg_t,
+    arg5: syscall_arg_t,
+    arg6: syscall_arg_t,
 ) u64 {
     return asm volatile (
         \\ syscall 0
         : [ret] "={$r4}" (-> u64),
-        : [number] "{$r11}" (@intFromEnum(number)),
+        : [number] "{$r11}" (@backingInt(number)),
           [arg1] "{$r4}" (arg1),
           [arg2] "{$r5}" (arg2),
           [arg3] "{$r6}" (arg3),

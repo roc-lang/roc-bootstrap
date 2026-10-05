@@ -1004,6 +1004,17 @@ LLVM_DUMP_METHOD void LiveRange::Segment::dump() const {
 }
 #endif
 
+void VNInfo::print(raw_ostream &OS) const {
+  OS << id << '@';
+  if (isUnused()) {
+    OS << 'x';
+  } else {
+    OS << def;
+    if (isPHIDef())
+      OS << "-phi";
+  }
+}
+
 void LiveRange::print(raw_ostream &OS) const {
   if (empty())
     OS << "EMPTY";
@@ -1021,15 +1032,10 @@ void LiveRange::print(raw_ostream &OS) const {
     for (const_vni_iterator i = vni_begin(), e = vni_end(); i != e;
          ++i, ++vnum) {
       const VNInfo *vni = *i;
-      if (vnum) OS << ' ';
-      OS << vnum << '@';
-      if (vni->isUnused()) {
-        OS << 'x';
-      } else {
-        OS << vni->def;
-        if (vni->isPHIDef())
-          OS << "-phi";
-      }
+      if (vnum)
+        OS << ' ';
+      OS << *vni;
+      assert(vnum == vni->id && "Bad VNInfo");
     }
   }
 }
@@ -1049,9 +1055,9 @@ void LiveInterval::print(raw_ostream &OS) const {
 }
 
 #if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
-LLVM_DUMP_METHOD void LiveRange::dump() const {
-  dbgs() << *this << '\n';
-}
+LLVM_DUMP_METHOD void VNInfo::dump() const { dbgs() << *this << '\n'; }
+
+LLVM_DUMP_METHOD void LiveRange::dump() const { dbgs() << *this << '\n'; }
 
 LLVM_DUMP_METHOD void LiveInterval::SubRange::dump() const {
   dbgs() << *this << '\n';

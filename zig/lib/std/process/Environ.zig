@@ -96,11 +96,12 @@ pub const WindowsBlock = struct {
     }
 };
 
+/// Each key and each value are allocated independently and owned by this data structure.
 pub const Map = struct {
     array_hash_map: ArrayHashMap,
     allocator: Allocator,
 
-    const ArrayHashMap = std.ArrayHashMapUnmanaged([]const u8, []const u8, EnvNameHashContext, false);
+    const ArrayHashMap = std.array_hash_map.Custom([]const u8, []const u8, EnvNameHashContext, false);
 
     pub const Size = usize;
 
@@ -340,9 +341,6 @@ pub const Map = struct {
     /// Returns a full copy of `em` allocated with `gpa`, which is not necessarily
     /// the same allocator used to allocate `em`.
     pub fn clone(m: *const Map, gpa: Allocator) Allocator.Error!Map {
-        // Since we need to dupe the keys and values, the only way for error handling to not be a
-        // nightmare is to add keys to an empty map one-by-one. This could be avoided if this
-        // abstraction were a bit less... OOP-esque.
         var new: Map = .init(gpa);
         errdefer new.deinit();
         try new.array_hash_map.ensureUnusedCapacity(gpa, m.array_hash_map.count());
@@ -350,6 +348,32 @@ pub const Map = struct {
             try new.put(key, value);
         }
         return new;
+    }
+
+    /// Adds all the key-value pairs from `other` into this `m`.
+    pub fn putAll(m: *Map, other: *const Map) Allocator.Error!void {
+        const gpa = m.allocator;
+        try m.array_hash_map.ensureUnusedCapacity(gpa, other.array_hash_map.count());
+        const start = m.count();
+        errdefer while (m.array_hash_map.count() > start) {
+            const kv = m.array_hash_map.pop().?;
+            gpa.free(kv.key);
+            gpa.free(kv.value);
+        };
+        for (other.array_hash_map.keys(), other.array_hash_map.values()) |key, value| {
+            try m.put(key, value);
+        }
+    }
+
+    /// Set the length to zero, freeing all key and value memory, not freeing
+    /// the allocation for the entries.
+    pub fn clearRetainingCapacity(m: *Map) void {
+        const gpa = m.allocator;
+        for (m.array_hash_map.keys(), m.array_hash_map.values()) |k, v| {
+            gpa.free(k);
+            gpa.free(v);
+        }
+        m.array_hash_map.clearRetainingCapacity();
     }
 
     /// Creates a null-delimited environment variable block in the format
@@ -442,7 +466,7 @@ pub const Map = struct {
             );
             i += "ZIG_PROGRESS=".len;
             var value_buf: [std.fmt.count("{d}", .{std.math.maxInt(usize)})]u8 = undefined;
-            const value = std.fmt.bufPrint(&value_buf, "{d}", .{@intFromPtr(handle)}) catch unreachable;
+            const value = std.mem.print(&value_buf, "{d}", .{@intFromPtr(handle)}) catch unreachable;
             for (block[i..][0..value.len], value) |*r, v| r.* = v;
             i += value.len;
             block[i] = 0;
@@ -754,7 +778,7 @@ pub fn createPosixBlock(
             },
             .nothing => {},
         };
-        envp[envp_len] = try gpa.dupeZ(u8, mem.span(entry));
+        envp[envp_len] = try gpa.dupeSentinel(u8, mem.span(entry), 0);
         envp_len += 1;
     }
 
@@ -816,7 +840,7 @@ pub fn createWindowsBlock(
         @memcpy(block[i..][0..zig_progress_key.len], &zig_progress_key);
         i += zig_progress_key.len;
         var value_buf: [std.fmt.count("{d}", .{std.math.maxInt(usize)})]u8 = undefined;
-        const value = std.fmt.bufPrint(&value_buf, "{d}", .{@intFromPtr(handle)}) catch unreachable;
+        const value = std.mem.print(&value_buf, "{d}", .{@intFromPtr(handle)}) catch unreachable;
         for (block[i..][0..value.len], value) |*r, v| r.* = v;
         i += value.len;
         block[i] = 0;

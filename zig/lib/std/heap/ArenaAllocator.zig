@@ -671,12 +671,10 @@ test "reset while retaining a buffer" {
 
     // Create two internal buffers
     _ = try a.alloc(u8, 1);
-    _ = try a.alloc(u8, 1000);
-
     try std.testing.expect(arena_allocator.state.used_list != null);
-
-    // Check that we have at least two buffers
-    try std.testing.expect(arena_allocator.state.used_list.?.next != null);
+    while (arena_allocator.state.used_list.?.next == null) {
+        _ = try a.alloc(u8, 1000);
+    }
 
     // This retains the first allocated buffer
     try std.testing.expect(arena_allocator.reset(.{ .retain_with_limit = 2 }));
@@ -767,7 +765,7 @@ fn fuzzMultiThreaded(fuzz_init: FuzzContext.Init, smith: *std.testing.Smith) any
                         .@"1",
                         .fromByteUnits(2 * std.heap.page_size_max),
                     ),
-                    @enumFromInt(alloc_index),
+                    @fromBackingInt(@intCast(alloc_index)),
                 }) catch unreachable;
             },
             .resize => group.concurrent(io, FuzzContext.doOneResize, .{ &ctx, nextLen(smith) }) catch unreachable,
@@ -879,7 +877,7 @@ const FuzzContext = struct {
         for (ctx.allocs[0..n_allocs]) |allocation| {
             const len: usize = switch (allocation.common.len) {
                 .free => continue,
-                _ => |len| @intFromEnum(len),
+                _ => |len| @backingInt(len),
             };
             const control = allocation.control_ptr[0..len];
             const sample = allocation.sample_ptr[0..len];
@@ -889,7 +887,7 @@ const FuzzContext = struct {
 
     fn doOneAlloc(ctx: *FuzzContext, len: usize, alignment: Alignment, index: Alloc.Index) void {
         @disableInstrumentation();
-        assert(ctx.allocs[@intFromEnum(index)].common.len == .free);
+        assert(ctx.allocs[@backingInt(index)].common.len == .free);
 
         const control_ptr = ctx.control_allocator.rawAlloc(len, alignment, @returnAddress()) orelse
             return;
@@ -898,11 +896,11 @@ const FuzzContext = struct {
             return;
         };
 
-        ctx.allocs[@intFromEnum(index)] = .{
+        ctx.allocs[@backingInt(index)] = .{
             .control_ptr = control_ptr,
             .sample_ptr = sample_ptr,
             .common = .{
-                .len = @enumFromInt(len),
+                .len = @fromBackingInt(@intCast(len)),
                 .alignment = alignment,
             },
         };
@@ -920,9 +918,9 @@ const FuzzContext = struct {
         const index = @atomicRmw(Alloc.Index, &ctx.last_alloc_index, .Xchg, .none, .acquire);
         if (index == .none) return;
 
-        const allocation = &ctx.allocs[@intFromEnum(index)];
+        const allocation = &ctx.allocs[@backingInt(index)];
         assert(allocation.common.len != .free);
-        const memory = allocation.sample_ptr[0..@intFromEnum(allocation.common.len)];
+        const memory = allocation.sample_ptr[0..@backingInt(allocation.common.len)];
         const alignment = allocation.common.alignment;
 
         assert(alignment.check(@intFromPtr(allocation.control_ptr)));
@@ -942,11 +940,11 @@ const FuzzContext = struct {
             return;
         }
 
-        ctx.allocs[@intFromEnum(index)] = .{
+        ctx.allocs[@backingInt(index)] = .{
             .control_ptr = new_control_ptr,
             .sample_ptr = memory.ptr,
             .common = .{
-                .len = @enumFromInt(new_len),
+                .len = @fromBackingInt(@intCast(new_len)),
                 .alignment = alignment,
             },
         };
@@ -974,9 +972,9 @@ const FuzzContext = struct {
         const index = @atomicRmw(Alloc.Index, &ctx.last_alloc_index, .Xchg, .none, .acquire);
         if (index == .none) return;
 
-        const allocation = &ctx.allocs[@intFromEnum(index)];
+        const allocation = &ctx.allocs[@backingInt(index)];
         assert(allocation.common.len != .free);
-        const len: usize = @intFromEnum(allocation.common.len);
+        const len: usize = @backingInt(allocation.common.len);
         const alignment = allocation.common.alignment;
 
         assert(alignment.check(@intFromPtr(allocation.control_ptr)));
@@ -985,7 +983,7 @@ const FuzzContext = struct {
         ctx.control_allocator.rawFree(allocation.control_ptr[0..len], alignment, @returnAddress());
         ctx.sample_allocator.rawFree(allocation.sample_ptr[0..len], alignment, @returnAddress());
 
-        ctx.allocs[@intFromEnum(index)] = .{
+        ctx.allocs[@backingInt(index)] = .{
             .control_ptr = undefined,
             .sample_ptr = undefined,
             .common = .{

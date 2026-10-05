@@ -2,86 +2,86 @@ const builtin = @import("builtin");
 const std = @import("../../std.zig");
 const SYS = std.os.linux.SYS;
 
-pub fn syscall0(number: SYS) u32 {
+pub const syscall_arg_t = u32;
+
+pub fn syscall0(
+    number: SYS,
+) u32 {
     return asm volatile (
         \\ syscall
         \\ beq $a3, $zero, 1f
-        \\ blez $v0, 1f
         \\ subu $v0, $zero, $v0
         \\1:
         : [ret] "={$2}" (-> u32),
-        : [number] "{$2}" (@intFromEnum(number)),
+        : [number] "{$2}" (@backingInt(number)),
         : .{ .r1 = true, .r3 = true, .r4 = true, .r5 = true, .r6 = true, .r7 = true, .r8 = true, .r9 = true, .r10 = true, .r11 = true, .r12 = true, .r13 = true, .r14 = true, .r15 = true, .r24 = true, .r25 = true, .hi = true, .lo = true, .memory = true });
 }
 
-pub fn syscall_pipe(fd: *[2]i32) u32 {
+pub fn syscall1(
+    number: SYS,
+    arg1: syscall_arg_t,
+) u32 {
     return asm volatile (
         \\ syscall
         \\ beq $a3, $zero, 1f
-        \\ blez $v0, 2f
-        \\ subu $v0, $zero, $v0
-        \\ b 2f
-        \\1:
-        \\ sw $v0, 0($a0)
-        \\ sw $v1, 4($a0)
-        \\2:
-        : [ret] "={$2}" (-> u32),
-        : [number] "{$2}" (@intFromEnum(SYS.pipe)),
-          [fd] "{$4}" (fd),
-        : .{ .r1 = true, .r3 = true, .r5 = true, .r6 = true, .r7 = true, .r8 = true, .r9 = true, .r10 = true, .r11 = true, .r12 = true, .r13 = true, .r14 = true, .r15 = true, .r24 = true, .r25 = true, .hi = true, .lo = true, .memory = true });
-}
-
-pub fn syscall1(number: SYS, arg1: u32) u32 {
-    return asm volatile (
-        \\ syscall
-        \\ beq $a3, $zero, 1f
-        \\ blez $v0, 1f
         \\ subu $v0, $zero, $v0
         \\1:
         : [ret] "={$2}" (-> u32),
-        : [number] "{$2}" (@intFromEnum(number)),
+        : [number] "{$2}" (@backingInt(number)),
           [arg1] "{$4}" (arg1),
         : .{ .r1 = true, .r3 = true, .r5 = true, .r6 = true, .r7 = true, .r8 = true, .r9 = true, .r10 = true, .r11 = true, .r12 = true, .r13 = true, .r14 = true, .r15 = true, .r24 = true, .r25 = true, .hi = true, .lo = true, .memory = true });
 }
 
-pub fn syscall2(number: SYS, arg1: u32, arg2: u32) u32 {
+pub fn syscall2(
+    number: SYS,
+    arg1: syscall_arg_t,
+    arg2: syscall_arg_t,
+) u32 {
     return asm volatile (
         \\ syscall
         \\ beq $a3, $zero, 1f
-        \\ blez $v0, 1f
         \\ subu $v0, $zero, $v0
         \\1:
         : [ret] "={$2}" (-> u32),
-        : [number] "{$2}" (@intFromEnum(number)),
+        : [number] "{$2}" (@backingInt(number)),
           [arg1] "{$4}" (arg1),
           [arg2] "{$5}" (arg2),
         : .{ .r1 = true, .r3 = true, .r6 = true, .r7 = true, .r8 = true, .r9 = true, .r10 = true, .r11 = true, .r12 = true, .r13 = true, .r14 = true, .r15 = true, .r24 = true, .r25 = true, .hi = true, .lo = true, .memory = true });
 }
 
-pub fn syscall3(number: SYS, arg1: u32, arg2: u32, arg3: u32) u32 {
+pub fn syscall3(
+    number: SYS,
+    arg1: syscall_arg_t,
+    arg2: syscall_arg_t,
+    arg3: syscall_arg_t,
+) u32 {
     return asm volatile (
         \\ syscall
         \\ beq $a3, $zero, 1f
-        \\ blez $v0, 1f
         \\ subu $v0, $zero, $v0
         \\1:
         : [ret] "={$2}" (-> u32),
-        : [number] "{$2}" (@intFromEnum(number)),
+        : [number] "{$2}" (@backingInt(number)),
           [arg1] "{$4}" (arg1),
           [arg2] "{$5}" (arg2),
           [arg3] "{$6}" (arg3),
         : .{ .r1 = true, .r3 = true, .r7 = true, .r8 = true, .r9 = true, .r10 = true, .r11 = true, .r12 = true, .r13 = true, .r14 = true, .r15 = true, .r24 = true, .r25 = true, .hi = true, .lo = true, .memory = true });
 }
 
-pub fn syscall4(number: SYS, arg1: u32, arg2: u32, arg3: u32, arg4: u32) u32 {
+pub fn syscall4(
+    number: SYS,
+    arg1: syscall_arg_t,
+    arg2: syscall_arg_t,
+    arg3: syscall_arg_t,
+    arg4: syscall_arg_t,
+) u32 {
     return asm volatile (
         \\ syscall
         \\ beq $a3, $zero, 1f
-        \\ blez $v0, 1f
         \\ subu $v0, $zero, $v0
         \\1:
         : [ret] "={$2}" (-> u32),
-        : [number] "{$2}" (@intFromEnum(number)),
+        : [number] "{$2}" (@backingInt(number)),
           [arg1] "{$4}" (arg1),
           [arg2] "{$5}" (arg2),
           [arg3] "{$6}" (arg3),
@@ -92,18 +92,24 @@ pub fn syscall4(number: SYS, arg1: u32, arg2: u32, arg3: u32, arg4: u32) u32 {
 // NOTE: The o32 calling convention requires the callee to reserve 16 bytes for
 // the first four arguments even though they're passed in $a0-$a3.
 
-pub fn syscall5(number: SYS, arg1: u32, arg2: u32, arg3: u32, arg4: u32, arg5: u32) u32 {
+pub fn syscall5(
+    number: SYS,
+    arg1: syscall_arg_t,
+    arg2: syscall_arg_t,
+    arg3: syscall_arg_t,
+    arg4: syscall_arg_t,
+    arg5: syscall_arg_t,
+) u32 {
     return asm volatile (
         \\ subu $sp, $sp, 24
         \\ sw %[arg5], 16($sp)
         \\ syscall
         \\ addu $sp, $sp, 24
         \\ beq $a3, $zero, 1f
-        \\ blez $v0, 1f
         \\ subu $v0, $zero, $v0
         \\1:
         : [ret] "={$2}" (-> u32),
-        : [number] "{$2}" (@intFromEnum(number)),
+        : [number] "{$2}" (@backingInt(number)),
           [arg1] "{$4}" (arg1),
           [arg2] "{$5}" (arg2),
           [arg3] "{$6}" (arg3),
@@ -114,12 +120,12 @@ pub fn syscall5(number: SYS, arg1: u32, arg2: u32, arg3: u32, arg4: u32, arg5: u
 
 pub fn syscall6(
     number: SYS,
-    arg1: u32,
-    arg2: u32,
-    arg3: u32,
-    arg4: u32,
-    arg5: u32,
-    arg6: u32,
+    arg1: syscall_arg_t,
+    arg2: syscall_arg_t,
+    arg3: syscall_arg_t,
+    arg4: syscall_arg_t,
+    arg5: syscall_arg_t,
+    arg6: syscall_arg_t,
 ) u32 {
     return asm volatile (
         \\ subu $sp, $sp, 24
@@ -128,11 +134,10 @@ pub fn syscall6(
         \\ syscall
         \\ addu $sp, $sp, 24
         \\ beq $a3, $zero, 1f
-        \\ blez $v0, 1f
         \\ subu $v0, $zero, $v0
         \\1:
         : [ret] "={$2}" (-> u32),
-        : [number] "{$2}" (@intFromEnum(number)),
+        : [number] "{$2}" (@backingInt(number)),
           [arg1] "{$4}" (arg1),
           [arg2] "{$5}" (arg2),
           [arg3] "{$6}" (arg3),
@@ -144,13 +149,13 @@ pub fn syscall6(
 
 pub fn syscall7(
     number: SYS,
-    arg1: u32,
-    arg2: u32,
-    arg3: u32,
-    arg4: u32,
-    arg5: u32,
-    arg6: u32,
-    arg7: u32,
+    arg1: syscall_arg_t,
+    arg2: syscall_arg_t,
+    arg3: syscall_arg_t,
+    arg4: syscall_arg_t,
+    arg5: syscall_arg_t,
+    arg6: syscall_arg_t,
+    arg7: syscall_arg_t,
 ) u32 {
     return asm volatile (
         \\ subu $sp, $sp, 32
@@ -160,11 +165,10 @@ pub fn syscall7(
         \\ syscall
         \\ addu $sp, $sp, 32
         \\ beq $a3, $zero, 1f
-        \\ blez $v0, 1f
         \\ subu $v0, $zero, $v0
         \\1:
         : [ret] "={$2}" (-> u32),
-        : [number] "{$2}" (@intFromEnum(number)),
+        : [number] "{$2}" (@backingInt(number)),
           [arg1] "{$4}" (arg1),
           [arg2] "{$5}" (arg2),
           [arg3] "{$6}" (arg3),
@@ -173,6 +177,25 @@ pub fn syscall7(
           [arg6] "r" (arg6),
           [arg7] "r" (arg7),
         : .{ .r1 = true, .r3 = true, .r8 = true, .r9 = true, .r10 = true, .r11 = true, .r12 = true, .r13 = true, .r14 = true, .r15 = true, .r24 = true, .r25 = true, .hi = true, .lo = true, .memory = true });
+}
+
+pub fn syscall_pipe(
+    fd: *[2]std.os.linux.fd_t,
+) u32 {
+    return asm volatile (
+        \\ syscall
+        \\ beq $a3, $zero, 1f
+        \\ subu $v0, $zero, $v0
+        \\ b 2f
+        \\1:
+        \\ sw $v0, 0($a0)
+        \\ sw $v1, 4($a0)
+        \\ move $v0, $zero
+        \\2:
+        : [ret] "={$2}" (-> u32),
+        : [number] "{$2}" (@backingInt(SYS.pipe)),
+          [fd] "{$4}" (fd),
+        : .{ .r1 = true, .r3 = true, .r5 = true, .r6 = true, .r7 = true, .r8 = true, .r9 = true, .r10 = true, .r11 = true, .r12 = true, .r13 = true, .r14 = true, .r15 = true, .r24 = true, .r25 = true, .hi = true, .lo = true, .memory = true });
 }
 
 pub fn clone() callconv(.naked) u32 {
@@ -198,7 +221,6 @@ pub fn clone() callconv(.naked) u32 {
         \\ li $v0, 4120 # SYS_clone
         \\ syscall
         \\ beq $a3, $zero, 1f
-        \\ blez $v0, 2f
         \\ subu $v0, $zero, $v0
         \\ b 2f
         \\1:

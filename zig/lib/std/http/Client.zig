@@ -4,8 +4,6 @@
 //!
 //! TLS support may be disabled via `std.options.http_disable_tls`.
 //!
-//! TODO all the lockUncancelable in this file should be changed to regular lock and
-//! `error.Canceled` added to more error sets.
 const Client = @This();
 
 const builtin = @import("builtin");
@@ -84,8 +82,8 @@ pub const ConnectionPool = struct {
     /// If no connection is found, null is returned.
     ///
     /// Threadsafe.
-    pub fn findConnection(pool: *ConnectionPool, io: Io, criteria: Criteria) ?*Connection {
-        pool.mutex.lockUncancelable(io);
+    pub fn findConnection(pool: *ConnectionPool, io: Io, criteria: Criteria) Io.Cancelable!?*Connection {
+        try pool.mutex.lock(io);
         defer pool.mutex.unlock(io);
 
         var next = pool.free.last;
@@ -113,8 +111,8 @@ pub const ConnectionPool = struct {
     }
 
     /// Acquires an existing connection from the connection pool. This function is threadsafe.
-    pub fn acquire(pool: *ConnectionPool, io: Io, connection: *Connection) void {
-        pool.mutex.lockUncancelable(io);
+    pub fn acquire(pool: *ConnectionPool, io: Io, connection: *Connection) Io.Cancelable!void {
+        try pool.mutex.lock(io);
         defer pool.mutex.unlock(io);
 
         return pool.acquireUnsafe(connection);
@@ -150,8 +148,8 @@ pub const ConnectionPool = struct {
     }
 
     /// Adds a newly created node to the pool of used connections. This function is threadsafe.
-    pub fn addUsed(pool: *ConnectionPool, io: Io, connection: *Connection) void {
-        pool.mutex.lockUncancelable(io);
+    pub fn addUsed(pool: *ConnectionPool, io: Io, connection: *Connection) Io.Cancelable!void {
+        try pool.mutex.lock(io);
         defer pool.mutex.unlock(io);
 
         pool.used.append(&connection.pool_node);
@@ -162,18 +160,15 @@ pub const ConnectionPool = struct {
     /// If the new size is smaller than the current size, then idle connections will be closed until the pool is the new size.
     ///
     /// Threadsafe.
-    pub fn resize(pool: *ConnectionPool, io: Io, allocator: Allocator, new_size: usize) void {
-        pool.mutex.lockUncancelable(io);
+    pub fn resize(pool: *ConnectionPool, io: Io, new_size: usize) Io.Cancelable!void {
+        try pool.mutex.lock(io);
         defer pool.mutex.unlock(io);
 
-        const next = pool.free.first;
-        _ = next;
         while (pool.free_len > new_size) {
-            const popped = pool.free.popFirst() orelse unreachable;
+            const popped: *Connection = @alignCast(@fieldParentPtr("pool_node", pool.free.popFirst().?));
             pool.free_len -= 1;
 
-            popped.data.close(allocator);
-            allocator.destroy(popped);
+            popped.destroy(io);
         }
 
         pool.free_size = new_size;
@@ -536,7 +531,7 @@ pub const Response = struct {
                 else => return error.HttpHeadersInvalid,
             };
             if (first_line[8] != ' ') return error.HttpHeadersInvalid;
-            const status: http.Status = @enumFromInt(parseInt3(first_line[9..12]));
+            const status: http.Status = @fromBackingInt(@intCast(parseInt3(first_line[9..12])));
             const reason = mem.trimStart(u8, first_line[12..], " ");
 
             res.version = version;
@@ -828,11 +823,11 @@ pub const Request = struct {
     /// Externally-owned; must outlive the Request.
     privileged_headers: []const http.Header,
 
-    pub const default_accept_encoding: [@typeInfo(http.ContentEncoding).@"enum".fields.len]bool = b: {
-        var result: [@typeInfo(http.ContentEncoding).@"enum".fields.len]bool = @splat(false);
-        result[@intFromEnum(http.ContentEncoding.gzip)] = true;
-        result[@intFromEnum(http.ContentEncoding.deflate)] = true;
-        result[@intFromEnum(http.ContentEncoding.identity)] = true;
+    pub const default_accept_encoding: [@typeInfo(http.ContentEncoding).@"enum".field_names.len]bool = b: {
+        var result: [@typeInfo(http.ContentEncoding).@"enum".field_names.len]bool = @splat(false);
+        result[@backingInt(http.ContentEncoding.gzip)] = true;
+        result[@backingInt(http.ContentEncoding.deflate)] = true;
+        result[@backingInt(http.ContentEncoding.identity)] = true;
         break :b result;
     };
 
@@ -869,20 +864,20 @@ pub const Request = struct {
 
         pub fn init(n: u16) RedirectBehavior {
             assert(n != std.math.maxInt(u16));
-            return @enumFromInt(n);
+            return @fromBackingInt(@intCast(n));
         }
 
         pub fn subtractOne(rb: *RedirectBehavior) void {
             switch (rb.*) {
                 .not_allowed => unreachable,
                 .unhandled => unreachable,
-                _ => rb.* = @enumFromInt(@intFromEnum(rb.*) - 1),
+                _ => rb.* = @fromBackingInt(@intCast(@backingInt(rb.*) - 1)),
             }
         }
 
         pub fn remaining(rb: RedirectBehavior) u16 {
             assert(rb != .unhandled);
-            return @intFromEnum(rb);
+            return @backingInt(rb);
         }
     };
 
@@ -1042,7 +1037,7 @@ pub const Request = struct {
             try w.writeAll("accept-encoding: ");
             for (r.accept_encoding, 0..) |enabled, i| {
                 if (!enabled) continue;
-                const tag: http.ContentEncoding = @enumFromInt(i);
+                const tag: http.ContentEncoding = @fromBackingInt(@intCast(i));
                 if (tag == .identity) continue;
                 const tag_name = @tagName(tag);
                 try w.ensureUnusedCapacity(tag_name.len + 2);
@@ -1193,7 +1188,7 @@ pub const Request = struct {
                 continue;
             }
 
-            if (!r.accept_encoding[@intFromEnum(head.content_encoding)])
+            if (!r.accept_encoding[@backingInt(head.content_encoding)])
                 return error.HttpContentEncodingUnsupported;
 
             r.response_transfer_encoding = head.transfer_encoding;
@@ -1234,7 +1229,11 @@ pub const Request = struct {
         const old_connection = r.connection.?;
         const old_host = old_connection.host();
         var new_host_name_buffer: [HostName.max_len]u8 = undefined;
-        const new_host = try new_uri.getHost(&new_host_name_buffer);
+        const new_host = HostName.fromUri(new_uri, &new_host_name_buffer) catch |err| switch (err) {
+            error.UriMissingHost => return error.HttpRedirectLocationInvalid,
+            error.InvalidHostName => return error.HttpRedirectLocationInvalid,
+            error.NameTooLong => return error.HttpRedirectLocationOversize,
+        };
         const keep_privileged_headers =
             std.ascii.eqlIgnoreCase(r.uri.scheme, new_uri.scheme) and
             old_host.sameParentDomain(new_host);
@@ -1323,7 +1322,7 @@ pub fn initDefaultProxies(client: *Client, arena: Allocator, environ_map: *const
     const io = client.io;
 
     // Prevent any new connections from being created.
-    client.connection_pool.mutex.lockUncancelable(io);
+    try client.connection_pool.mutex.lock(io);
     defer client.connection_pool.mutex.unlock(io);
 
     assert(client.connection_pool.used.first == null); // There are active requests.
@@ -1354,7 +1353,8 @@ fn createProxyFromEnvVar(
 
     const uri = Uri.parse(content) catch try Uri.parseAfterScheme("http", content);
     const protocol = Protocol.fromUri(uri) orelse return null;
-    const raw_host = try uri.getHostAlloc(arena);
+    var host_buf: [HostName.max_len]u8 = undefined;
+    const raw_host = try HostName.fromUri(uri, &host_buf);
 
     const authorization: ?[]const u8 = if (uri.user != null or uri.password != null) a: {
         const authorization = try arena.alloc(u8, basic_authorization.valueLengthFromUri(uri));
@@ -1365,7 +1365,7 @@ fn createProxyFromEnvVar(
     const proxy = try arena.create(Proxy);
     proxy.* = .{
         .protocol = protocol,
-        .host = raw_host,
+        .host = .{ .bytes = try arena.dupe(u8, raw_host.bytes) },
         .authorization = authorization,
         .port = uriPort(uri, protocol),
         .supports_connect = true,
@@ -1418,7 +1418,7 @@ pub const basic_authorization = struct {
 
 pub const ConnectTcpError = error{
     TlsInitializationFailed,
-} || Allocator.Error || HostName.ConnectError;
+} || Allocator.Error || HostName.ConnectError || Io.Cancelable;
 
 /// Reuses a `Connection` if one matching `host` and `port` is already open.
 ///
@@ -1451,7 +1451,7 @@ pub fn connectTcpOptions(client: *Client, options: ConnectTcpOptions) ConnectTcp
     const proxied_host = options.proxied_host orelse host;
     const proxied_port = options.proxied_port orelse port;
 
-    if (client.connection_pool.findConnection(io, .{
+    if (try client.connection_pool.findConnection(io, .{
         .host = proxied_host,
         .port = proxied_port,
         .protocol = protocol,
@@ -1469,18 +1469,20 @@ pub fn connectTcpOptions(client: *Client, options: ConnectTcpOptions) ConnectTcp
                 error.Canceled => |e| return e,
                 else => return error.TlsInitializationFailed,
             };
-            client.connection_pool.addUsed(io, &tc.connection);
+            errdefer tc.destroy();
+            try client.connection_pool.addUsed(io, &tc.connection);
             return &tc.connection;
         },
         .plain => {
             const pc = try Connection.Plain.create(client, proxied_host, proxied_port, stream);
-            client.connection_pool.addUsed(io, &pc.connection);
+            errdefer pc.destroy();
+            try client.connection_pool.addUsed(io, &pc.connection);
             return &pc.connection;
         },
     }
 }
 
-pub const ConnectUnixError = Allocator.Error || std.posix.SocketError || error{NameTooLong} || std.posix.ConnectError;
+pub const ConnectUnixError = Allocator.Error || std.posix.SocketError || error{NameTooLong} || std.posix.ConnectError || Io.Cancelable;
 
 /// Connect to `path` as a unix domain socket. This will reuse a connection if one is already open.
 ///
@@ -1488,7 +1490,7 @@ pub const ConnectUnixError = Allocator.Error || std.posix.SocketError || error{N
 pub fn connectUnix(client: *Client, path: []const u8) ConnectUnixError!*Connection {
     const io = client.io;
 
-    if (client.connection_pool.findConnection(io, .{
+    if (try client.connection_pool.findConnection(io, .{
         .host = path,
         .port = 0,
         .protocol = .plain,
@@ -1512,7 +1514,7 @@ pub fn connectUnix(client: *Client, path: []const u8) ConnectUnixError!*Connecti
     };
     errdefer client.allocator.free(conn.data.host);
 
-    client.connection_pool.addUsed(conn);
+    try client.connection_pool.addUsed(conn);
 
     return &conn.data;
 }
@@ -1530,7 +1532,7 @@ pub fn connectProxied(
     const io = client.io;
     if (!proxy.supports_connect) return error.TunnelNotSupported;
 
-    if (client.connection_pool.findConnection(io, .{
+    if (try client.connection_pool.findConnection(io, .{
         .host = proxied_host,
         .port = proxied_port,
         .protocol = proxy.protocol,
@@ -1627,6 +1629,7 @@ pub fn connect(
 pub const RequestError = ConnectTcpError || error{
     UnsupportedUriScheme,
     UriMissingHost,
+    InvalidHostName,
     CertificateBundleLoadFailure,
 };
 
@@ -1651,7 +1654,7 @@ pub const RequestOptions = struct {
     ///
     /// This will only follow redirects for repeatable requests (ie. with no
     /// payload or the server has acknowledged the payload).
-    redirect_behavior: Request.RedirectBehavior = @enumFromInt(3),
+    redirect_behavior: Request.RedirectBehavior = @fromBackingInt(@intCast(3)),
 
     /// Must be an already acquired connection.
     connection: ?*Connection = null,
@@ -1724,7 +1727,10 @@ pub fn request(
 
     const connection = options.connection orelse c: {
         var host_name_buffer: [HostName.max_len]u8 = undefined;
-        const host_name = try uri.getHost(&host_name_buffer);
+        const host_name = HostName.fromUri(uri, &host_name_buffer) catch |err| switch (err) {
+            error.UriMissingHost => |e| return e,
+            error.NameTooLong, error.InvalidHostName => return error.InvalidHostName,
+        };
         break :c try client.connect(host_name, uriPort(uri, protocol), protocol);
     };
 
@@ -1807,7 +1813,7 @@ pub fn fetch(client: *Client, options: FetchOptions) FetchError!FetchResult {
         if (options.payload != null) .POST else .GET;
 
     const redirect_behavior: Request.RedirectBehavior = options.redirect_behavior orelse
-        if (options.payload == null) @enumFromInt(3) else .unhandled;
+        if (options.payload == null) @fromBackingInt(@intCast(3)) else .unhandled;
 
     var req = try request(client, method, uri, .{
         .redirect_behavior = redirect_behavior,

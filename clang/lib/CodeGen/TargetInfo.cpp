@@ -63,6 +63,13 @@ LLVM_DUMP_METHOD void ABIArgInfo::dump() const {
     OS << "CoerceAndExpand Type=";
     getCoerceAndExpandType()->print(OS);
     break;
+  case TargetSpecific:
+    OS << "TargetSpecific Type=";
+    if (llvm::Type *Ty = getCoerceToType())
+      Ty->print(OS);
+    else
+      OS << "null";
+    break;
   }
   OS << ")\n";
 }
@@ -75,7 +82,7 @@ TargetCodeGenInfo::~TargetCodeGenInfo() = default;
 // If someone can figure out a general rule for this, that would be great.
 // It's probably just doomed to be platform-dependent, though.
 unsigned TargetCodeGenInfo::getSizeOfUnwindException() const {
-  if (getABIInfo().getContext().getLangOpts().hasSEHExceptions())
+  if (getABIInfo().getCodeGenOpts().hasSEHExceptions())
     return getABIInfo().getDataLayout().getPointerSizeInBits() > 32 ? 64 : 48;
   // Verified for:
   //   x86-64     FreeBSD, Linux, Darwin

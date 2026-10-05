@@ -28,7 +28,7 @@ const Xcr0 = packed struct(u32) {
 };
 
 fn setFeature(cpu: *Target.Cpu, feature: Target.x86.Feature, enabled: bool) void {
-    const idx = @as(Target.Cpu.Feature.Set.Index, @intFromEnum(feature));
+    const idx = @as(Target.Cpu.Feature.Set.Index, @backingInt(feature));
 
     if (enabled) cpu.features.addFeature(idx) else cpu.features.removeFeature(idx);
 }
@@ -41,8 +41,7 @@ inline fn hasMask(input: u32, mask: u32) bool {
     return (input & mask) == mask;
 }
 
-pub fn detectNativeCpuAndFeatures(arch: Target.Cpu.Arch, os: Target.Os, query: Target.Query) Target.Cpu {
-    _ = query;
+pub fn detectNativeCpuAndFeatures(arch: Target.Cpu.Arch) Target.Cpu {
     var cpu = Target.Cpu{
         .arch = arch,
         .model = Target.Cpu.Model.generic(arch),
@@ -50,7 +49,7 @@ pub fn detectNativeCpuAndFeatures(arch: Target.Cpu.Arch, os: Target.Os, query: T
     };
 
     // First we detect features, to use as hints when detecting CPU Model.
-    detectNativeFeatures(&cpu, os.tag);
+    detectNativeFeatures(&cpu);
 
     var leaf = cpuid(0, 0);
     const max_leaf = leaf.eax;
@@ -72,246 +71,110 @@ pub fn detectNativeCpuAndFeatures(arch: Target.Cpu.Arch, os: Target.Os, query: T
         }
 
         // Now we detect the model.
-        switch (vendor) {
-            0x756e6547 => {
-                detectIntelProcessor(&cpu, family, model, brand_id);
-            },
-            0x68747541 => {
-                if (detectAMDProcessor(cpu, family, model)) |m| cpu.model = m;
-            },
-            else => {},
+        if (switch (vendor) {
+            0x756e6547 => detectIntelProcessor(&cpu, family, model, brand_id),
+            0x68747541 => detectAmdProcessor(&cpu, family, model),
+            else => null,
+        }) |m| b: {
+            // Some hypervisors are evil liars and will operate in long mode while identifying as a
+            // CPU model that never had long mode in reality. We've seen this in practice with
+            // athlon_xp (AMD K7). Catch this contradiction and fall back to using a generic CPU
+            // model with the features we detected earlier.
+            if (cpu.has(.x86, .@"64bit") and !Target.x86.featureSetHas(m.features, .@"64bit")) break :b;
+
+            cpu.model = m;
         }
     }
 
     // Add the CPU model's feature set into the working set, but then
     // override with actual detected features again.
     cpu.features.addFeatureSet(cpu.model.features);
-    detectNativeFeatures(&cpu, os.tag);
+    detectNativeFeatures(&cpu);
 
     cpu.features.populateDependencies(cpu.arch.allFeaturesList());
 
     return cpu;
 }
 
-fn detectIntelProcessor(cpu: *Target.Cpu, family: u32, model: u32, brand_id: u32) void {
-    if (brand_id != 0) {
-        return;
-    }
-    switch (family) {
-        3 => {
-            cpu.model = &Target.x86.cpu.i386;
-            return;
+fn detectIntelProcessor(cpu: *const Target.Cpu, family: u32, model: u32, brand_id: u32) ?*const Target.Cpu.Model {
+    if (brand_id != 0) return null;
+
+    return switch (family) {
+        3 => &Target.x86.cpu.i386,
+        4 => &Target.x86.cpu.i486,
+        5 => if (cpu.has(.x86, .mmx))
+            &Target.x86.cpu.pentium_mmx
+        else
+            &Target.x86.cpu.pentium,
+        6 => switch (model) {
+            0x01 => &Target.x86.cpu.pentiumpro,
+            0x03, 0x05, 0x06 => &Target.x86.cpu.pentium2,
+            0x07, 0x08, 0x0a, 0x0b => &Target.x86.cpu.pentium3,
+            0x09, 0x0d, 0x15 => &Target.x86.cpu.pentium_m,
+            0x0e => &Target.x86.cpu.yonah,
+            0x0f, 0x16 => &Target.x86.cpu.core2,
+            0x17, 0x1d => &Target.x86.cpu.penryn,
+            0x1a, 0x1e, 0x1f, 0x2e => &Target.x86.cpu.nehalem,
+            0x25, 0x2c, 0x2f => &Target.x86.cpu.westmere,
+            0x2a, 0x2d => &Target.x86.cpu.sandybridge,
+            0x3a, 0x3e => &Target.x86.cpu.ivybridge,
+            0x3c, 0x3f, 0x45, 0x46 => &Target.x86.cpu.haswell,
+            0x3d, 0x47, 0x4f, 0x56 => &Target.x86.cpu.broadwell,
+            0x4e, 0x5e, 0x8e, 0x9e, 0xa5, 0xa6 => &Target.x86.cpu.skylake,
+            0xa7 => &Target.x86.cpu.rocketlake,
+            0x55 => if (cpu.has(.x86, .avx512bf16))
+                &Target.x86.cpu.cooperlake
+            else if (cpu.has(.x86, .avx512vnni))
+                &Target.x86.cpu.cascadelake
+            else
+                &Target.x86.cpu.skylake_avx512,
+            0x66 => &Target.x86.cpu.cannonlake,
+            0x7d, 0x7e => &Target.x86.cpu.icelake_client,
+            0x6a, 0x6c => &Target.x86.cpu.icelake_server,
+            0x8c, 0x8d => &Target.x86.cpu.tigerlake,
+            0x97, 0x9a => &Target.x86.cpu.alderlake,
+            0xbe => &Target.x86.cpu.gracemont,
+            0xb7, 0xba, 0xbf => &Target.x86.cpu.raptorlake,
+            0xaa, 0xac => &Target.x86.cpu.meteorlake,
+            0xc5, 0xb5 => &Target.x86.cpu.arrowlake,
+            0xc6 => &Target.x86.cpu.arrowlake_s,
+            0xbd => &Target.x86.cpu.lunarlake,
+            0xcc, 0xd5 => &Target.x86.cpu.pantherlake,
+            0xad => &Target.x86.cpu.graniterapids,
+            0xae => &Target.x86.cpu.graniterapids_d,
+            0xcf => &Target.x86.cpu.emeraldrapids,
+            0x8f => &Target.x86.cpu.sapphirerapids,
+            0x1c, 0x26, 0x27, 0x35, 0x36 => &Target.x86.cpu.bonnell,
+            0x37, 0x4a, 0x4d, 0x5a, 0x5d, 0x4c => &Target.x86.cpu.silvermont,
+            0x5c, 0x5f => &Target.x86.cpu.goldmont,
+            0x7a => &Target.x86.cpu.goldmont_plus,
+            0x86, 0x8a, 0x96, 0x9c => &Target.x86.cpu.tremont,
+            0xaf => &Target.x86.cpu.sierraforest,
+            0xb6 => &Target.x86.cpu.grandridge,
+            0xdd => &Target.x86.cpu.clearwaterforest,
+            0x57 => &Target.x86.cpu.knl,
+            0x85 => &Target.x86.cpu.knm,
+            else => null,
         },
-        4 => {
-            cpu.model = &Target.x86.cpu.i486;
-            return;
+        15 => if (cpu.has(.x86, .@"64bit"))
+            &Target.x86.cpu.nocona
+        else if (cpu.has(.x86, .sse3))
+            &Target.x86.cpu.prescott
+        else
+            &Target.x86.cpu.pentium4,
+        18 => switch (model) {
+            0x01, 0x03 => &Target.x86.cpu.novalake,
+            else => null,
         },
-        5 => {
-            if (cpu.has(.x86, .mmx)) {
-                cpu.model = &Target.x86.cpu.pentium_mmx;
-                return;
-            }
-            cpu.model = &Target.x86.cpu.pentium;
-            return;
+        19 => switch (model) {
+            0x01 => &Target.x86.cpu.diamondrapids,
+            else => null,
         },
-        6 => {
-            switch (model) {
-                0x01 => {
-                    cpu.model = &Target.x86.cpu.pentiumpro;
-                    return;
-                },
-                0x03, 0x05, 0x06 => {
-                    cpu.model = &Target.x86.cpu.pentium2;
-                    return;
-                },
-                0x07, 0x08, 0x0a, 0x0b => {
-                    cpu.model = &Target.x86.cpu.pentium3;
-                    return;
-                },
-                0x09, 0x0d, 0x15 => {
-                    cpu.model = &Target.x86.cpu.pentium_m;
-                    return;
-                },
-                0x0e => {
-                    cpu.model = &Target.x86.cpu.yonah;
-                    return;
-                },
-                0x0f, 0x16 => {
-                    cpu.model = &Target.x86.cpu.core2;
-                    return;
-                },
-                0x17, 0x1d => {
-                    cpu.model = &Target.x86.cpu.penryn;
-                    return;
-                },
-                0x1a, 0x1e, 0x1f, 0x2e => {
-                    cpu.model = &Target.x86.cpu.nehalem;
-                    return;
-                },
-                0x25, 0x2c, 0x2f => {
-                    cpu.model = &Target.x86.cpu.westmere;
-                    return;
-                },
-                0x2a, 0x2d => {
-                    cpu.model = &Target.x86.cpu.sandybridge;
-                    return;
-                },
-                0x3a, 0x3e => {
-                    cpu.model = &Target.x86.cpu.ivybridge;
-                    return;
-                },
-                0x3c, 0x3f, 0x45, 0x46 => {
-                    cpu.model = &Target.x86.cpu.haswell;
-                    return;
-                },
-                0x3d, 0x47, 0x4f, 0x56 => {
-                    cpu.model = &Target.x86.cpu.broadwell;
-                    return;
-                },
-                0x4e, 0x5e, 0x8e, 0x9e, 0xa5, 0xa6 => {
-                    cpu.model = &Target.x86.cpu.skylake;
-                    return;
-                },
-                0xa7 => {
-                    cpu.model = &Target.x86.cpu.rocketlake;
-                    return;
-                },
-                0x55 => {
-                    if (cpu.has(.x86, .avx512bf16)) {
-                        cpu.model = &Target.x86.cpu.cooperlake;
-                        return;
-                    } else if (cpu.has(.x86, .avx512vnni)) {
-                        cpu.model = &Target.x86.cpu.cascadelake;
-                        return;
-                    } else {
-                        cpu.model = &Target.x86.cpu.skylake_avx512;
-                        return;
-                    }
-                },
-                0x66 => {
-                    cpu.model = &Target.x86.cpu.cannonlake;
-                    return;
-                },
-                0x7d, 0x7e => {
-                    cpu.model = &Target.x86.cpu.icelake_client;
-                    return;
-                },
-                0x6a, 0x6c => {
-                    cpu.model = &Target.x86.cpu.icelake_server;
-                    return;
-                },
-                0x8c, 0x8d => {
-                    cpu.model = &Target.x86.cpu.tigerlake;
-                    return;
-                },
-                0x97, 0x9a => {
-                    cpu.model = &Target.x86.cpu.alderlake;
-                    return;
-                },
-                0xbe => {
-                    cpu.model = &Target.x86.cpu.gracemont;
-                    return;
-                },
-                0xb7, 0xba, 0xbf => {
-                    cpu.model = &Target.x86.cpu.raptorlake;
-                    return;
-                },
-                0xaa, 0xac => {
-                    cpu.model = &Target.x86.cpu.meteorlake;
-                    return;
-                },
-                0xc5, 0xb5 => {
-                    cpu.model = &Target.x86.cpu.arrowlake;
-                    return;
-                },
-                0xc6 => {
-                    cpu.model = &Target.x86.cpu.arrowlake_s;
-                    return;
-                },
-                0xbd => {
-                    cpu.model = &Target.x86.cpu.lunarlake;
-                    return;
-                },
-                0xcc => {
-                    cpu.model = &Target.x86.cpu.pantherlake;
-                    return;
-                },
-                0xad => {
-                    cpu.model = &Target.x86.cpu.graniterapids;
-                    return;
-                },
-                0xae => {
-                    cpu.model = &Target.x86.cpu.graniterapids_d;
-                    return;
-                },
-                0xcf => {
-                    cpu.model = &Target.x86.cpu.emeraldrapids;
-                    return;
-                },
-                0x8f => {
-                    cpu.model = &Target.x86.cpu.sapphirerapids;
-                    return;
-                },
-                0x1c, 0x26, 0x27, 0x35, 0x36 => {
-                    cpu.model = &Target.x86.cpu.bonnell;
-                    return;
-                },
-                0x37, 0x4a, 0x4d, 0x5a, 0x5d, 0x4c => {
-                    cpu.model = &Target.x86.cpu.silvermont;
-                    return;
-                },
-                0x5c, 0x5f => {
-                    cpu.model = &Target.x86.cpu.goldmont;
-                    return;
-                },
-                0x7a => {
-                    cpu.model = &Target.x86.cpu.goldmont_plus;
-                    return;
-                },
-                0x86, 0x8a, 0x96, 0x9c => {
-                    cpu.model = &Target.x86.cpu.tremont;
-                    return;
-                },
-                0xaf => {
-                    cpu.model = &Target.x86.cpu.sierraforest;
-                    return;
-                },
-                0xb6 => {
-                    cpu.model = &Target.x86.cpu.grandridge;
-                    return;
-                },
-                0xdd => {
-                    cpu.model = &Target.x86.cpu.clearwaterforest;
-                    return;
-                },
-                0x57 => {
-                    cpu.model = &Target.x86.cpu.knl;
-                    return;
-                },
-                0x85 => {
-                    cpu.model = &Target.x86.cpu.knm;
-                    return;
-                },
-                else => return, // Unknown CPU Model
-            }
-        },
-        15 => {
-            if (cpu.has(.x86, .@"64bit")) {
-                cpu.model = &Target.x86.cpu.nocona;
-                return;
-            }
-            if (cpu.has(.x86, .sse3)) {
-                cpu.model = &Target.x86.cpu.prescott;
-                return;
-            }
-            cpu.model = &Target.x86.cpu.pentium4;
-            return;
-        },
-        else => return, // Unknown CPU Model
-    }
+        else => null,
+    };
 }
 
-fn detectAMDProcessor(cpu: Target.Cpu, family: u32, model: u32) ?*const Target.Cpu.Model {
+fn detectAmdProcessor(cpu: *const Target.Cpu, family: u32, model: u32) ?*const Target.Cpu.Model {
     return switch (family) {
         4 => &Target.x86.cpu.i486,
         5 => switch (model) {
@@ -351,7 +214,7 @@ fn detectAMDProcessor(cpu: Target.Cpu, family: u32, model: u32) ?*const Target.C
     };
 }
 
-fn detectNativeFeatures(cpu: *Target.Cpu, os_tag: Target.Os.Tag) void {
+fn detectNativeFeatures(cpu: *Target.Cpu) void {
     var leaf = cpuid(0, 0);
 
     const max_level = leaf.eax;
@@ -404,13 +267,15 @@ fn detectNativeFeatures(cpu: *Target.Cpu, os_tag: Target.Os.Tag) void {
     // Darwin lazily saves the AVX512 context on first use: trust that the OS will
     // save the AVX512 context if we use AVX512 instructions, even if the bit is not
     // set right now.
-    const has_avx512_save = if (os_tag.isDarwin())
+    const has_avx512_save = if (builtin.target.os.tag.isDarwin())
         true
     else
         xcr0.zmm_hi256 and xcr0.hi16_zmm;
 
     // AMX requires additional context to be saved by the OS.
     const has_amx_save = xcr0.xtilecfg and xcr0.xtiledata;
+
+    const has_apx_save = xcr0.apx;
 
     setFeature(cpu, .avx, has_avx_save);
     setFeature(cpu, .fma, bit(leaf.ecx, 12) and has_avx_save);
@@ -470,7 +335,20 @@ fn detectNativeFeatures(cpu: *Target.Cpu, os_tag: Target.Os.Tag) void {
         }
     }
 
-    if (max_level >= 0x7) {
+    if (max_ext_level >= 0x80000021) {
+        leaf = cpuid(0x80000021, 0);
+
+        // AMD uses a different bit for prefetchi.
+        setFeature(cpu, .prefetchi, bit(leaf.eax, 20));
+    } else {
+        for ([_]Target.x86.Feature{
+            .prefetchi,
+        }) |feat| {
+            setFeature(cpu, feat, false);
+        }
+    }
+
+    const has_avx10 = if (max_level >= 0x7) has_avx10: {
         leaf = cpuid(0x7, 0);
 
         setFeature(cpu, .fsgsbase, bit(leaf.ebx, 0));
@@ -484,7 +362,6 @@ fn detectNativeFeatures(cpu: *Target.Cpu, os_tag: Target.Os.Tag) void {
         setFeature(cpu, .rtm, bit(leaf.ebx, 11));
         // AVX512 is only supported if the OS supports the context save for it.
         setFeature(cpu, .avx512f, bit(leaf.ebx, 16) and has_avx512_save);
-        setFeature(cpu, .evex512, bit(leaf.ebx, 16) and has_avx512_save);
         setFeature(cpu, .avx512dq, bit(leaf.ebx, 17) and has_avx512_save);
         setFeature(cpu, .rdseed, bit(leaf.ebx, 18));
         setFeature(cpu, .adx, bit(leaf.ebx, 19));
@@ -556,15 +433,20 @@ fn detectNativeFeatures(cpu: *Target.Cpu, os_tag: Target.Os.Tag) void {
             setFeature(cpu, .avxneconvert, bit(leaf.edx, 5) and has_avx_save);
             setFeature(cpu, .amx_complex, bit(leaf.edx, 8) and has_amx_save);
             setFeature(cpu, .avxvnniint16, bit(leaf.edx, 10) and has_avx_save);
-            setFeature(cpu, .prefetchi, bit(leaf.edx, 14));
+            // This needs to account for prefetchi already being detected above on AMD.
+            setFeature(cpu, .prefetchi, cpu.has(.x86, .prefetchi) or bit(leaf.edx, 14));
             setFeature(cpu, .usermsr, bit(leaf.edx, 15));
             // APX
-            setFeature(cpu, .egpr, bit(leaf.edx, 21));
-            setFeature(cpu, .push2pop2, bit(leaf.edx, 21));
-            setFeature(cpu, .ppx, bit(leaf.edx, 21));
-            setFeature(cpu, .ndd, bit(leaf.edx, 21));
-            setFeature(cpu, .ccmp, bit(leaf.edx, 21));
-            setFeature(cpu, .cf, bit(leaf.edx, 21));
+            setFeature(cpu, .egpr, bit(leaf.edx, 21) and has_apx_save);
+            setFeature(cpu, .push2pop2, bit(leaf.edx, 21) and has_apx_save);
+            setFeature(cpu, .ppx, bit(leaf.edx, 21) and has_apx_save);
+            setFeature(cpu, .ndd, bit(leaf.edx, 21) and has_apx_save);
+            setFeature(cpu, .ccmp, bit(leaf.edx, 21) and has_apx_save);
+            setFeature(cpu, .nf, bit(leaf.edx, 21) and has_apx_save);
+            setFeature(cpu, .cf, bit(leaf.edx, 21) and has_apx_save);
+            setFeature(cpu, .zu, bit(leaf.edx, 21) and has_apx_save);
+
+            break :has_avx10 bit(leaf.edx, 19);
         } else {
             for ([_]Target.x86.Feature{
                 .sha512,
@@ -582,19 +464,23 @@ fn detectNativeFeatures(cpu: *Target.Cpu, os_tag: Target.Os.Tag) void {
                 .avxneconvert,
                 .amx_complex,
                 .avxvnniint16,
-                .prefetchi,
+                // prefetchi already handled earlier.
                 .usermsr,
                 .egpr,
                 .push2pop2,
                 .ppx,
                 .ndd,
                 .ccmp,
+                .nf,
                 .cf,
+                .zu,
             }) |feat| {
                 setFeature(cpu, feat, false);
             }
         }
-    } else {
+
+        break :has_avx10 false;
+    } else has_avx10: {
         for ([_]Target.x86.Feature{
             .fsgsbase,
             .sgx,
@@ -605,7 +491,6 @@ fn detectNativeFeatures(cpu: *Target.Cpu, os_tag: Target.Os.Tag) void {
             .invpcid,
             .rtm,
             .avx512f,
-            .evex512,
             .avx512dq,
             .rdseed,
             .adx,
@@ -664,18 +549,22 @@ fn detectNativeFeatures(cpu: *Target.Cpu, os_tag: Target.Os.Tag) void {
             .avxneconvert,
             .amx_complex,
             .avxvnniint16,
-            .prefetchi,
+            // prefetchi already handled earlier.
             .usermsr,
             .egpr,
             .push2pop2,
             .ppx,
             .ndd,
             .ccmp,
+            .nf,
             .cf,
+            .zu,
         }) |feat| {
             setFeature(cpu, feat, false);
         }
-    }
+
+        break :has_avx10 false;
+    };
 
     if (max_level >= 0xD and has_avx_save) {
         leaf = cpuid(0xD, 0x1);
@@ -721,10 +610,14 @@ fn detectNativeFeatures(cpu: *Target.Cpu, os_tag: Target.Os.Tag) void {
     if (max_level >= 0x24) {
         leaf = cpuid(0x24, 0);
 
-        setFeature(cpu, .avx10_1, bit(leaf.ebx, 18));
+        const avx_ver = leaf.ebx & 0xff;
+
+        setFeature(cpu, .avx10_1, has_avx10 and avx_ver >= 1);
+        setFeature(cpu, .avx10_2, has_avx10 and avx_ver >= 2);
     } else {
         for ([_]Target.x86.Feature{
             .avx10_1,
+            .avx10_2,
         }) |feat| {
             setFeature(cpu, feat, false);
         }

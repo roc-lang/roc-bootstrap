@@ -17,25 +17,25 @@ pub const featureSetHasAny = CpuFeature.FeatureSetFns(Feature).featureSetHasAny;
 pub const featureSetHasAll = CpuFeature.FeatureSetFns(Feature).featureSetHasAll;
 
 pub const all_features = blk: {
-    const len = @typeInfo(Feature).@"enum".fields.len;
+    const len = @typeInfo(Feature).@"enum".field_names.len;
     std.debug.assert(len <= CpuFeature.Set.needed_bit_count);
     var result: [len]CpuFeature = undefined;
-    result[@intFromEnum(Feature.bwx)] = .{
+    result[@backingInt(Feature.bwx)] = .{
         .llvm_name = null,
         .description = "Enable byte/word extensions",
         .dependencies = featureSet(&[_]Feature{}),
     };
-    result[@intFromEnum(Feature.cix)] = .{
+    result[@backingInt(Feature.cix)] = .{
         .llvm_name = null,
         .description = "Enable counting extensions",
         .dependencies = featureSet(&[_]Feature{}),
     };
-    result[@intFromEnum(Feature.fix)] = .{
+    result[@backingInt(Feature.fix)] = .{
         .llvm_name = null,
         .description = "Enable floating point move and square root extensions",
         .dependencies = featureSet(&[_]Feature{}),
     };
-    result[@intFromEnum(Feature.max)] = .{
+    result[@backingInt(Feature.max)] = .{
         .llvm_name = null,
         .description = "Enable motion video extensions",
         .dependencies = featureSet(&[_]Feature{}),
@@ -43,7 +43,7 @@ pub const all_features = blk: {
     const ti = @typeInfo(Feature);
     for (&result, 0..) |*elem, i| {
         elem.index = i;
-        elem.name = ti.@"enum".fields[i].name;
+        elem.name = ti.@"enum".field_names[i];
     }
     break :blk result;
 };

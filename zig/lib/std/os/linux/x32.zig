@@ -2,44 +2,66 @@ const builtin = @import("builtin");
 const std = @import("../../std.zig");
 const SYS = std.os.linux.SYS;
 
-pub fn syscall0(number: SYS) u32 {
+pub const syscall_arg_t = u64;
+
+pub fn syscall0(
+    number: SYS,
+) u32 {
     return asm volatile ("syscall"
         : [ret] "={rax}" (-> u32),
-        : [number] "{rax}" (@intFromEnum(number)),
+        : [number] "{rax}" (@backingInt(number)),
         : .{ .rcx = true, .r11 = true, .memory = true });
 }
 
-pub fn syscall1(number: SYS, arg1: u32) u32 {
+pub fn syscall1(
+    number: SYS,
+    arg1: syscall_arg_t,
+) u32 {
     return asm volatile ("syscall"
         : [ret] "={rax}" (-> u32),
-        : [number] "{rax}" (@intFromEnum(number)),
+        : [number] "{rax}" (@backingInt(number)),
           [arg1] "{rdi}" (arg1),
         : .{ .rcx = true, .r11 = true, .memory = true });
 }
 
-pub fn syscall2(number: SYS, arg1: u32, arg2: u32) u32 {
+pub fn syscall2(
+    number: SYS,
+    arg1: syscall_arg_t,
+    arg2: syscall_arg_t,
+) u32 {
     return asm volatile ("syscall"
         : [ret] "={rax}" (-> u32),
-        : [number] "{rax}" (@intFromEnum(number)),
+        : [number] "{rax}" (@backingInt(number)),
           [arg1] "{rdi}" (arg1),
           [arg2] "{rsi}" (arg2),
         : .{ .rcx = true, .r11 = true, .memory = true });
 }
 
-pub fn syscall3(number: SYS, arg1: u32, arg2: u32, arg3: u32) u32 {
+pub fn syscall3(
+    number: SYS,
+    arg1: syscall_arg_t,
+    arg2: syscall_arg_t,
+    arg3: syscall_arg_t,
+) u32 {
     return asm volatile ("syscall"
         : [ret] "={rax}" (-> u32),
-        : [number] "{rax}" (@intFromEnum(number)),
+        : [number] "{rax}" (@backingInt(number)),
           [arg1] "{rdi}" (arg1),
           [arg2] "{rsi}" (arg2),
           [arg3] "{rdx}" (arg3),
         : .{ .rcx = true, .r11 = true, .memory = true });
 }
 
-pub fn syscall4(number: SYS, arg1: u32, arg2: u32, arg3: u32, arg4: u32) u32 {
+pub fn syscall4(
+    number: SYS,
+    arg1: syscall_arg_t,
+    arg2: syscall_arg_t,
+    arg3: syscall_arg_t,
+    arg4: syscall_arg_t,
+) u32 {
     return asm volatile ("syscall"
         : [ret] "={rax}" (-> u32),
-        : [number] "{rax}" (@intFromEnum(number)),
+        : [number] "{rax}" (@backingInt(number)),
           [arg1] "{rdi}" (arg1),
           [arg2] "{rsi}" (arg2),
           [arg3] "{rdx}" (arg3),
@@ -47,10 +69,17 @@ pub fn syscall4(number: SYS, arg1: u32, arg2: u32, arg3: u32, arg4: u32) u32 {
         : .{ .rcx = true, .r11 = true, .memory = true });
 }
 
-pub fn syscall5(number: SYS, arg1: u32, arg2: u32, arg3: u32, arg4: u32, arg5: u32) u32 {
+pub fn syscall5(
+    number: SYS,
+    arg1: syscall_arg_t,
+    arg2: syscall_arg_t,
+    arg3: syscall_arg_t,
+    arg4: syscall_arg_t,
+    arg5: syscall_arg_t,
+) u32 {
     return asm volatile ("syscall"
         : [ret] "={rax}" (-> u32),
-        : [number] "{rax}" (@intFromEnum(number)),
+        : [number] "{rax}" (@backingInt(number)),
           [arg1] "{rdi}" (arg1),
           [arg2] "{rsi}" (arg2),
           [arg3] "{rdx}" (arg3),
@@ -61,16 +90,16 @@ pub fn syscall5(number: SYS, arg1: u32, arg2: u32, arg3: u32, arg4: u32, arg5: u
 
 pub fn syscall6(
     number: SYS,
-    arg1: u32,
-    arg2: u32,
-    arg3: u32,
-    arg4: u32,
-    arg5: u32,
-    arg6: u32,
+    arg1: syscall_arg_t,
+    arg2: syscall_arg_t,
+    arg3: syscall_arg_t,
+    arg4: syscall_arg_t,
+    arg5: syscall_arg_t,
+    arg6: syscall_arg_t,
 ) u32 {
     return asm volatile ("syscall"
         : [ret] "={rax}" (-> u32),
-        : [number] "{rax}" (@intFromEnum(number)),
+        : [number] "{rax}" (@backingInt(number)),
           [arg1] "{rdi}" (arg1),
           [arg2] "{rsi}" (arg2),
           [arg3] "{rdx}" (arg3),
@@ -80,59 +109,65 @@ pub fn syscall6(
         : .{ .rcx = true, .r11 = true, .memory = true });
 }
 
+pub fn syscall_lseek(
+    fd: std.os.linux.fd_t,
+    offset: std.os.linux.off_t,
+    whence: u32,
+) u64 {
+    return asm volatile ("syscall"
+        : [ret] "={rax}" (-> u64),
+        : [number] "{rax}" (@backingInt(SYS.lseek)),
+          [fd] "{rdi}" (@as(u32, @bitCast(fd))),
+          [offset] "{rsi}" (@as(u64, @bitCast(offset))),
+          [whence] "{rdx}" (whence),
+        : .{ .rcx = true, .r11 = true, .memory = true });
+}
+
 pub fn clone() callconv(.naked) u32 {
     asm volatile (
-        \\      movl $0x40000038,%%eax // SYS_clone
-        \\      mov %%rdi,%%r11
-        \\      mov %%rdx,%%rdi
-        \\      mov %%r8,%%rdx
-        \\      mov %%r9,%%r8
-        \\      mov 8(%%rsp),%%r10
-        \\      mov %%r11,%%r9
-        \\      and $-16,%%rsi
-        \\      sub $8,%%rsi
-        \\      mov %%rcx,(%%rsi)
-        \\      syscall
-        \\      test %%eax,%%eax
-        \\      jz 1f
-        \\      ret
+        \\ movl $0x40000038,%%eax // SYS_clone
+        \\ mov %%rdi,%%r11
+        \\ mov %%rdx,%%rdi
+        \\ mov %%r8,%%rdx
+        \\ mov %%r9,%%r8
+        \\ mov 8(%%rsp),%%r10d
+        \\ mov %%r11,%%r9
+        \\ and $-16,%%rsi
+        \\ sub $8,%%rsi
+        \\ mov %%rcx,(%%rsi)
+        \\ syscall
+        \\ test %%eax,%%eax
+        \\ jz 1f
+        \\ ret
         \\
         \\1:
     );
     if (builtin.unwind_tables != .none or !builtin.strip_debug_info) asm volatile (
-        \\      .cfi_undefined %%rip
+        \\ .cfi_undefined %%rip
     );
     asm volatile (
-        \\      xor %%ebp,%%ebp
+        \\ xor %%ebp,%%ebp
         \\
-        \\      pop %%rdi
-        \\      call *%%r9
-        \\      mov %%eax,%%edi
-        \\      movl $0x4000003c,%%eax // SYS_exit
-        \\      syscall
-        \\
+        \\ pop %%rdi
+        \\ call *%%r9
+        \\ mov %%eax,%%edi
+        \\ movl $0x4000003c,%%eax // SYS_exit
+        \\ syscall
     );
 }
 
 pub const restore = restore_rt;
 
 pub fn restore_rt() callconv(.naked) noreturn {
-    switch (builtin.zig_backend) {
-        .stage2_c => asm volatile (
-            \\ movl %[number], %%eax
-            \\ syscall
-            :
-            : [number] "i" (@intFromEnum(SYS.rt_sigreturn)),
-        ),
-        else => asm volatile (
-            \\ syscall
-            :
-            : [number] "{rax}" (@intFromEnum(SYS.rt_sigreturn)),
-        ),
-    }
+    asm volatile (
+        \\ movl %[number], %%eax
+        \\ syscall
+        :
+        : [number] "i" (@backingInt(SYS.rt_sigreturn)),
+    );
 }
 
-pub const time_t = i32;
+pub const time_t = i64;
 
 pub const VDSO = struct {
     pub const CGT_SYM = "__vdso_clock_gettime";

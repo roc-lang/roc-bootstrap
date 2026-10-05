@@ -21,7 +21,7 @@ pub fn CbcMac(comptime BlockCipher: type) type {
         pub const mac_length = block_length;
 
         cipher_ctx: BlockCipherCtx,
-        buf: Block = [_]u8{0} ** block_length,
+        buf: Block = @splat(0),
         pos: usize = 0,
 
         pub fn create(out: *[mac_length]u8, msg: []const u8, key: *const [key_length]u8) void {
@@ -67,6 +67,12 @@ pub fn CbcMac(comptime BlockCipher: type) type {
             // CBC-MAC: encrypt the current buffer state.
             // Partial blocks are implicitly zero-padded: buf[pos..] contains zeros from initialization.
             self.cipher_ctx.encrypt(out, &self.buf);
+        }
+
+        pub fn finalResult(d: *Self) [mac_length]u8 {
+            var result: [mac_length]u8 = undefined;
+            d.final(&result);
+            return result;
         }
     };
 }

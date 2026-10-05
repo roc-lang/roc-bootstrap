@@ -40,7 +40,7 @@ pub const Resource = struct {
     }
 
     pub fn isDlgInclude(resource: Resource) bool {
-        return resource.type_value == .ordinal and resource.type_value.ordinal == @intFromEnum(res.RT.DLGINCLUDE);
+        return resource.type_value == .ordinal and resource.type_value.ordinal == @backingInt(res.RT.DLGINCLUDE);
     }
 };
 
@@ -306,7 +306,7 @@ pub fn writeCoff(
     try writeSymbol(writer, .{
         .name = ".rsrc$01".*,
         .value = 0,
-        .section_number = @enumFromInt(1),
+        .section_number = @fromBackingInt(@intCast(1)),
         .type = .{
             .base_type = .NULL,
             .complex_type = .NULL,
@@ -321,13 +321,13 @@ pub fn writeCoff(
         .checksum = 0,
         .number = 0,
         .selection = .NONE,
-        .unused = .{0} ** 3,
+        .unused = @splat(0),
     });
 
     try writeSymbol(writer, .{
         .name = ".rsrc$02".*,
         .value = 0,
-        .section_number = @enumFromInt(2),
+        .section_number = @fromBackingInt(@intCast(2)),
         .type = .{
             .base_type = .NULL,
             .complex_type = .NULL,
@@ -342,7 +342,7 @@ pub fn writeCoff(
         .checksum = 0,
         .number = 0,
         .selection = .NONE,
-        .unused = .{0} ** 3,
+        .unused = @splat(0),
     });
 
     for (resource_symbols) |resource_symbol| {
@@ -353,11 +353,11 @@ pub fn writeCoff(
         const name_bytes: [8]u8 = name_bytes: {
             if (external_symbol_name.len > 8) {
                 const string_table_offset: u32 = try string_table.put(allocator, external_symbol_name);
-                var bytes = [_]u8{0} ** 8;
+                var bytes: [8]u8 = @splat(0);
                 std.mem.writeInt(u32, bytes[4..8], string_table_offset, .little);
                 break :name_bytes bytes;
             } else {
-                var symbol_shortname = [_]u8{0} ** 8;
+                var symbol_shortname: [8]u8 = @splat(0);
                 @memcpy(symbol_shortname[0..external_symbol_name.len], external_symbol_name);
                 break :name_bytes symbol_shortname;
             }
@@ -383,10 +383,10 @@ pub fn writeCoff(
 fn writeSymbol(writer: *std.Io.Writer, symbol: std.coff.Symbol) !void {
     try writer.writeAll(&symbol.name);
     try writer.writeInt(u32, symbol.value, .little);
-    try writer.writeInt(u16, @intFromEnum(symbol.section_number), .little);
-    try writer.writeInt(u8, @intFromEnum(symbol.type.base_type), .little);
-    try writer.writeInt(u8, @intFromEnum(symbol.type.complex_type), .little);
-    try writer.writeInt(u8, @intFromEnum(symbol.storage_class), .little);
+    try writer.writeInt(i16, @backingInt(symbol.section_number), .little);
+    try writer.writeInt(u8, @backingInt(symbol.type.base_type), .little);
+    try writer.writeInt(u8, @backingInt(symbol.type.complex_type), .little);
+    try writer.writeInt(u8, @backingInt(symbol.storage_class), .little);
     try writer.writeInt(u8, symbol.number_of_aux_symbols, .little);
 }
 
@@ -396,7 +396,7 @@ fn writeSectionDefinition(writer: *std.Io.Writer, def: std.coff.SectionDefinitio
     try writer.writeInt(u16, def.number_of_linenumbers, .little);
     try writer.writeInt(u32, def.checksum, .little);
     try writer.writeInt(u16, def.number, .little);
-    try writer.writeInt(u8, @intFromEnum(def.selection), .little);
+    try writer.writeInt(u8, @backingInt(def.selection), .little);
     try writer.writeAll(&def.unused);
 }
 
@@ -439,9 +439,9 @@ pub const ResourceDataEntry = extern struct {
 
 /// type -> name -> language
 const ResourceTree = struct {
-    type_to_name_map: std.ArrayHashMapUnmanaged(NameOrOrdinal, NameToLanguageMap, NameOrOrdinalHashContext, true),
-    rsrc_string_table: std.ArrayHashMapUnmanaged(NameOrOrdinal, void, NameOrOrdinalHashContext, true),
-    deduplicated_data: std.StringArrayHashMapUnmanaged(u32),
+    type_to_name_map: std.array_hash_map.Custom(NameOrOrdinal, NameToLanguageMap, NameOrOrdinalHashContext, true),
+    rsrc_string_table: std.array_hash_map.Custom(NameOrOrdinal, void, NameOrOrdinalHashContext, true),
+    deduplicated_data: std.array_hash_map.String(u32),
     data_offsets: std.ArrayList(u32),
     rsrc02_len: u32,
     coff_options: CoffOptions,
@@ -451,8 +451,8 @@ const ResourceTree = struct {
         resource: *const Resource,
         original_index: usize,
     };
-    const LanguageToResourceMap = std.AutoArrayHashMapUnmanaged(Language, RelocatableResource);
-    const NameToLanguageMap = std.ArrayHashMapUnmanaged(NameOrOrdinal, LanguageToResourceMap, NameOrOrdinalHashContext, true);
+    const LanguageToResourceMap = std.array_hash_map.Auto(Language, RelocatableResource);
+    const NameToLanguageMap = std.array_hash_map.Custom(NameOrOrdinal, LanguageToResourceMap, NameOrOrdinalHashContext, true);
 
     const NameOrOrdinalHashContext = struct {
         pub fn hash(self: @This(), v: NameOrOrdinal) u32 {
@@ -883,14 +883,14 @@ const ResourceTree = struct {
                 std.mem.writeInt(u32, name_buf[0..4], 0, .little);
                 std.mem.writeInt(u32, name_buf[4..8], string_table_offset, .little);
             } else {
-                const name_slice = std.fmt.bufPrint(&name_buf, "$R{X:0>6}", .{relocation.data_offset}) catch unreachable;
+                const name_slice = std.mem.print(&name_buf, "$R{X:0>6}", .{relocation.data_offset}) catch unreachable;
                 std.debug.assert(name_slice.len == 8);
             }
 
             symbols[i] = .{
                 .name = name_buf,
                 .value = relocation.data_offset,
-                .section_number = @enumFromInt(2),
+                .section_number = @fromBackingInt(@intCast(2)),
                 .type = .{
                     .base_type = .NULL,
                     .complex_type = .NULL,
@@ -1054,17 +1054,18 @@ pub const supported_targets = struct {
             .ebc,
         };
         comptime {
-            for (@typeInfo(Arch).@"enum".fields) |enum_field| {
-                _ = std.mem.indexOfScalar(Arch, ordered_for_display, @enumFromInt(enum_field.value)) orelse {
-                    @compileError(std.fmt.comptimePrint("'{s}' missing from ordered_for_display", .{enum_field.name}));
+            const info = @typeInfo(Arch).@"enum";
+            for (info.field_names, info.field_values) |field_name, field_value| {
+                _ = std.mem.findScalar(Arch, ordered_for_display, @fromBackingInt(@intCast(field_value))) orelse {
+                    @compileError(std.fmt.comptimePrint("'{s}' missing from ordered_for_display", .{field_name}));
                 };
             }
         }
 
         pub const longest_name = blk: {
             var len = 0;
-            for (@typeInfo(Arch).@"enum".fields) |field| {
-                if (field.name.len > len) len = field.name.len;
+            for (@typeInfo(Arch).@"enum".field_names) |field_name| {
+                if (field_name.len > len) len = field_name.len;
             }
             break :blk len;
         };
@@ -1088,11 +1089,11 @@ pub const supported_targets = struct {
     // https://learn.microsoft.com/en-us/windows/win32/debug/pe-format#type-indicators
     pub fn rvaRelocationTypeIndicator(target: std.coff.IMAGE.FILE.MACHINE) ?u16 {
         return switch (target) {
-            .AMD64 => @intFromEnum(std.coff.IMAGE.REL.AMD64.ADDR32NB),
-            .I386 => @intFromEnum(std.coff.IMAGE.REL.I386.DIR32NB),
-            .ARMNT => @intFromEnum(std.coff.IMAGE.REL.ARM.ADDR32NB),
-            .ARM64, .ARM64EC, .ARM64X => @intFromEnum(std.coff.IMAGE.REL.ARM64.ADDR32NB),
-            .IA64 => @intFromEnum(std.coff.IMAGE.REL.IA64.DIR32NB),
+            .AMD64 => @backingInt(std.coff.IMAGE.REL.AMD64.ADDR32NB),
+            .I386 => @backingInt(std.coff.IMAGE.REL.I386.DIR32NB),
+            .ARMNT => @backingInt(std.coff.IMAGE.REL.ARM.ADDR32NB),
+            .ARM64, .ARM64EC, .ARM64X => @backingInt(std.coff.IMAGE.REL.ARM64.ADDR32NB),
+            .IA64 => @backingInt(std.coff.IMAGE.REL.IA64.DIR32NB),
             .EBC => 0x1, // This is what cvtres.exe writes for this target, unsure where it comes from
             else => null,
         };
@@ -1106,14 +1107,14 @@ pub const supported_targets = struct {
         // Enforce two things:
         // 1. Arch enum field names are all lowercase (necessary for how fromStringIgnoreCase is implemented)
         // 2. All enum fields in Arch have an associated RVA relocation type when converted to a coff.IMAGE.FILE.MACHINE
-        for (@typeInfo(Arch).@"enum".fields) |enum_field| {
-            const all_lower = all_lower: for (enum_field.name) |c| {
+        for (@typeInfo(Arch).@"enum".field_names) |field_name| {
+            const all_lower = all_lower: for (field_name) |c| {
                 if (std.ascii.isUpper(c)) break :all_lower false;
             } else break :all_lower true;
-            if (!all_lower) @compileError(std.fmt.comptimePrint("Arch field is not all lowercase: {s}", .{enum_field.name}));
-            const coff_machine = @field(Arch, enum_field.name).toCoffMachineType();
+            if (!all_lower) @compileError(std.fmt.comptimePrint("Arch field is not all lowercase: {s}", .{field_name}));
+            const coff_machine = @field(Arch, field_name).toCoffMachineType();
             _ = rvaRelocationTypeIndicator(coff_machine) orelse {
-                @compileError(std.fmt.comptimePrint("No RVA relocation for Arch: {s}", .{enum_field.name}));
+                @compileError(std.fmt.comptimePrint("No RVA relocation for Arch: {s}", .{field_name}));
             };
         }
     }

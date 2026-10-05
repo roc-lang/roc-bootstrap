@@ -1,7 +1,10 @@
 const std = @import("std");
+const Context = @import("tests.zig").StackTracesContext;
 
-pub fn addCases(cases: *@import("tests.zig").StackTracesContext, os: std.Target.Os.Tag) void {
+pub fn addCases(cases: *Context, params: *const Context.CaseParameters, target: *const std.Target) void {
     cases.addCase(.{
+        .params = params,
+        .target = target,
         .name = "simple panic",
         .source =
         \\pub fn main() void {
@@ -33,6 +36,8 @@ pub fn addCases(cases: *@import("tests.zig").StackTracesContext, os: std.Target.
     });
 
     cases.addCase(.{
+        .params = params,
+        .target = target,
         .name = "simple panic with no unwind strategy",
         .source =
         \\pub fn main() void {
@@ -50,6 +55,8 @@ pub fn addCases(cases: *@import("tests.zig").StackTracesContext, os: std.Target.
     });
 
     cases.addCase(.{
+        .params = params,
+        .target = target,
         .name = "dump current trace",
         .source =
         \\pub fn main() void {
@@ -89,6 +96,8 @@ pub fn addCases(cases: *@import("tests.zig").StackTracesContext, os: std.Target.
     });
 
     cases.addCase(.{
+        .params = params,
+        .target = target,
         .name = "dump current trace with no unwind strategy",
         .source =
         \\pub fn main() void {
@@ -114,6 +123,8 @@ pub fn addCases(cases: *@import("tests.zig").StackTracesContext, os: std.Target.
     });
 
     cases.addCase(.{
+        .params = params,
+        .target = target,
         .name = "dump captured trace",
         .source =
         \\pub fn main() void {
@@ -155,6 +166,8 @@ pub fn addCases(cases: *@import("tests.zig").StackTracesContext, os: std.Target.
     });
 
     cases.addCase(.{
+        .params = params,
+        .target = target,
         .name = "dump captured trace with no unwind strategy",
         .source =
         \\pub fn main() void {
@@ -180,6 +193,8 @@ pub fn addCases(cases: *@import("tests.zig").StackTracesContext, os: std.Target.
     });
 
     cases.addCase(.{
+        .params = params,
+        .target = target,
         .name = "dump captured trace on thread",
         .source =
         \\pub fn main() !void {
@@ -225,28 +240,33 @@ pub fn addCases(cases: *@import("tests.zig").StackTracesContext, os: std.Target.
     });
 
     cases.addCase(.{
+        .params = params,
+        .target = target,
         .name = "simple inline panic",
+        // The main function has two inline calls to ensure
+        // that inlinees in PDBs are properly deduplicated.
         .source =
         \\pub fn main() void {
-        \\    foo();
+        \\    foo(false);
+        \\    foo(true);
         \\}
-        \\inline fn foo() void {
-        \\    @panic("oh no");
+        \\inline fn foo(b: bool) void {
+        \\    if (b) @panic("oh no");
         \\}
         \\
         ,
         .unwind = .any,
         .expect_panic = true,
-        .expect = switch (os) {
+        .expect = switch (target.os.tag) {
             // LLVM doesn't emit column info in the binary annotations for inlinee callees in PDBs,
             // so the first location has only a row.
             .windows =>
             \\panic: oh no
-            \\source.zig:5: [address] in foo
-            \\    @panic("oh no");
+            \\source.zig:6: [address] in foo
+            \\    if (b) @panic("oh no");
             \\
-            \\source.zig:2:8: [address] in main
-            \\    foo();
+            \\source.zig:3:8: [address] in main
+            \\    foo(true);
             \\       ^
             \\
             ,
@@ -254,12 +274,12 @@ pub fn addCases(cases: *@import("tests.zig").StackTracesContext, os: std.Target.
             // resolve the inline callers.
             else =>
             \\panic: oh no
-            \\source.zig:5:5: [address] in foo
-            \\    @panic("oh no");
-            \\    ^
+            \\source.zig:6:12: [address] in foo
+            \\    if (b) @panic("oh no");
+            \\           ^
             ,
         },
-        .expect_strip = switch (os) {
+        .expect_strip = switch (target.os.tag) {
             .windows =>
             \\panic: oh no
             \\???:?:?: [address] in source.foo
@@ -276,6 +296,8 @@ pub fn addCases(cases: *@import("tests.zig").StackTracesContext, os: std.Target.
 
     // Make sure all inline calls are resolved and in the right order!
     cases.addCase(.{
+        .params = params,
+        .target = target,
         .name = "nested inline panic",
         .source =
         \\pub fn main() void {
@@ -295,7 +317,7 @@ pub fn addCases(cases: *@import("tests.zig").StackTracesContext, os: std.Target.
         .unwind = .any,
         .expect_panic = true,
         // This switch serves a similar purpose as in "inline panic".
-        .expect = switch (os) {
+        .expect = switch (target.os.tag) {
             .windows =>
             \\panic: oh no
             \\source.zig:11: [address] in baz
@@ -319,7 +341,7 @@ pub fn addCases(cases: *@import("tests.zig").StackTracesContext, os: std.Target.
             \\    ^
             ,
         },
-        .expect_strip = switch (os) {
+        .expect_strip = switch (target.os.tag) {
             .windows =>
             \\panic: oh no
             \\???:?:?: [address] in baz

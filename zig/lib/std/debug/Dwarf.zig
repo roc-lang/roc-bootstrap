@@ -114,12 +114,14 @@ pub const Abbrev = struct {
 };
 
 pub const CompileUnit = struct {
+    offset: u64,
+    size: u64,
     version: u16,
     format: Format,
     addr_size_bytes: u8,
+    abbrev_offset: u64,
     die: Die,
     pc_range: ?PcRange,
-
     str_offsets_base: usize,
     addr_base: usize,
     rnglists_base: usize,
@@ -134,7 +136,7 @@ pub const CompileUnit = struct {
         files: []FileEntry,
         version: u16,
 
-        pub const LineTable = std.AutoArrayHashMapUnmanaged(u64, LineEntry);
+        pub const LineTable = std.array_hash_map.Auto(u64, LineEntry);
 
         pub const LineEntry = struct {
             line: u32,
@@ -246,14 +248,6 @@ pub const Die = struct {
         return form_value.getUInt(u64);
     }
 
-    fn getAttrUnsignedLe(self: *const Die, id: u64) !u64 {
-        const form_value = self.getAttr(id) orelse return error.MissingDebugInfo;
-        return switch (form_value.*) {
-            .Const => |value| value.asUnsignedLe(),
-            else => bad(),
-        };
-    }
-
     fn getAttrRef(self: *const Die, id: u64, unit_offset: u64, unit_len: u64) !u64 {
         const form_value = self.getAttr(id) orelse return error.MissingDebugInfo;
         return switch (form_value.*) {
@@ -323,7 +317,7 @@ const Func = struct {
 };
 
 pub fn section(di: Dwarf, dwarf_section: Section.Id) ?[]const u8 {
-    return if (di.sections[@intFromEnum(dwarf_section)]) |s| s.data else null;
+    return if (di.sections[@backingInt(dwarf_section)]) |s| s.data else null;
 }
 
 pub fn deinit(di: *Dwarf, gpa: Allocator) void {
@@ -387,18 +381,19 @@ fn scanAllFunctions(di: *Dwarf, gpa: Allocator, endian: Endian) ScanError!void {
         const next_offset = unit_header.header_length + unit_header.unit_length;
 
         const version = try fr.takeInt(u16, endian);
-        if (version < 2 or version > 5) return bad();
-
         var address_size: u8 = undefined;
         var debug_abbrev_offset: u64 = undefined;
-        if (version >= 5) {
+        if (version == 5) {
             const unit_type = try fr.takeByte();
             if (unit_type != DW.UT.compile) return bad();
             address_size = try fr.takeByte();
             debug_abbrev_offset = try readFormatSizedInt(&fr, unit_header.format, endian);
-        } else {
+        } else if (version >= 2 and version < 5) {
             debug_abbrev_offset = try readFormatSizedInt(&fr, unit_header.format, endian);
             address_size = try fr.takeByte();
+        } else {
+            this_unit_offset += next_offset;
+            continue;
         }
 
         const abbrev_table = try di.getAbbrevTable(gpa, debug_abbrev_offset);
@@ -424,12 +419,14 @@ fn scanAllFunctions(di: *Dwarf, gpa: Allocator, endian: Endian) ScanError!void {
         const next_unit_pos = this_unit_offset + next_offset;
 
         var compile_unit: CompileUnit = .{
+            .offset = this_unit_offset,
+            .size = next_offset,
             .version = version,
             .format = unit_header.format,
             .addr_size_bytes = address_size,
+            .abbrev_offset = debug_abbrev_offset,
             .die = undefined,
             .pc_range = null,
-
             .str_offsets_base = 0,
             .addr_base = 0,
             .rnglists_base = 0,
@@ -450,6 +447,7 @@ fn scanAllFunctions(di: *Dwarf, gpa: Allocator, endian: Endian) ScanError!void {
                 unit_header.format,
                 endian,
                 address_size,
+                version,
             )) orelse continue;
 
             switch (die_obj.tag_id) {
@@ -485,6 +483,7 @@ fn scanAllFunctions(di: *Dwarf, gpa: Allocator, endian: Endian) ScanError!void {
                                     unit_header.format,
                                     endian,
                                     address_size,
+                                    version,
                                 )) orelse return bad();
                             } else if (this_die_obj.getAttr(AT.specification)) |_| {
                                 const after_die_offset = fr.seek;
@@ -500,6 +499,7 @@ fn scanAllFunctions(di: *Dwarf, gpa: Allocator, endian: Endian) ScanError!void {
                                     unit_header.format,
                                     endian,
                                     address_size,
+                                    version,
                                 )) orelse return bad();
                             } else {
                                 break :x null;
@@ -582,18 +582,19 @@ fn scanAllCompileUnits(di: *Dwarf, gpa: Allocator, endian: Endian) ScanError!voi
         const next_offset = unit_header.header_length + unit_header.unit_length;
 
         const version = try fr.takeInt(u16, endian);
-        if (version < 2 or version > 5) return bad();
-
         var address_size: u8 = undefined;
         var debug_abbrev_offset: u64 = undefined;
-        if (version >= 5) {
+        if (version == 5) {
             const unit_type = try fr.takeByte();
             if (unit_type != UT.compile) return bad();
             address_size = try fr.takeByte();
             debug_abbrev_offset = try readFormatSizedInt(&fr, unit_header.format, endian);
-        } else {
+        } else if (version >= 2 and version < 5) {
             debug_abbrev_offset = try readFormatSizedInt(&fr, unit_header.format, endian);
             address_size = try fr.takeByte();
+        } else {
+            this_unit_offset += next_offset;
+            continue;
         }
 
         const abbrev_table = try di.getAbbrevTable(gpa, debug_abbrev_offset);
@@ -611,6 +612,7 @@ fn scanAllCompileUnits(di: *Dwarf, gpa: Allocator, endian: Endian) ScanError!voi
             unit_header.format,
             endian,
             address_size,
+            version,
         )) orelse return bad();
 
         if (compile_unit_die.tag_id != DW.TAG.compile_unit) return bad();
@@ -618,9 +620,12 @@ fn scanAllCompileUnits(di: *Dwarf, gpa: Allocator, endian: Endian) ScanError!voi
         compile_unit_die.attrs = try gpa.dupe(Die.Attr, compile_unit_die.attrs);
 
         var compile_unit: CompileUnit = .{
+            .offset = this_unit_offset,
+            .size = next_offset,
             .version = version,
             .format = unit_header.format,
             .addr_size_bytes = address_size,
+            .abbrev_offset = debug_abbrev_offset,
             .pc_range = null,
             .die = compile_unit_die,
             .str_offsets_base = if (compile_unit_die.getAttr(AT.str_offsets_base)) |fv| try fv.getUInt(usize) else 0,
@@ -879,16 +884,16 @@ fn parseAbbrevTable(di: *Dwarf, gpa: Allocator, offset: u64) !Abbrev.Table {
     var fr: Reader = .fixed(di.section(.debug_abbrev).?);
     fr.seek = cast(usize, offset) orelse return bad();
 
-    var abbrevs = std.array_list.Managed(Abbrev).init(gpa);
+    var abbrevs: std.ArrayList(Abbrev) = .empty;
     defer {
         for (abbrevs.items) |*abbrev| {
             abbrev.deinit(gpa);
         }
-        abbrevs.deinit();
+        abbrevs.deinit(gpa);
     }
 
-    var attrs = std.array_list.Managed(Abbrev.Attr).init(gpa);
-    defer attrs.deinit();
+    var attrs: std.ArrayList(Abbrev.Attr) = .empty;
+    defer attrs.deinit(gpa);
 
     while (true) {
         const code = try fr.takeLeb128(u64);
@@ -900,7 +905,7 @@ fn parseAbbrevTable(di: *Dwarf, gpa: Allocator, offset: u64) !Abbrev.Table {
             const attr_id = try fr.takeLeb128(u64);
             const form_id = try fr.takeLeb128(u64);
             if (attr_id == 0 and form_id == 0) break;
-            try attrs.append(.{
+            try attrs.append(gpa, .{
                 .id = attr_id,
                 .form_id = form_id,
                 .payload = switch (form_id) {
@@ -909,18 +914,18 @@ fn parseAbbrevTable(di: *Dwarf, gpa: Allocator, offset: u64) !Abbrev.Table {
                 },
             });
         }
-
-        try abbrevs.append(.{
+        try abbrevs.ensureUnusedCapacity(gpa, 1);
+        abbrevs.appendAssumeCapacity(.{
             .code = code,
             .tag_id = tag_id,
             .has_children = has_children,
-            .attrs = try attrs.toOwnedSlice(),
+            .attrs = try attrs.toOwnedSlice(gpa),
         });
     }
 
     return .{
         .offset = offset,
-        .abbrevs = try abbrevs.toOwnedSlice(),
+        .abbrevs = try abbrevs.toOwnedSlice(gpa),
     };
 }
 
@@ -931,6 +936,7 @@ fn parseDie(
     format: Format,
     endian: Endian,
     addr_size_bytes: u8,
+    version: u16,
 ) ScanError!?Die {
     const abbrev_code = try fr.takeLeb128(u64);
     if (abbrev_code == 0) return null;
@@ -939,7 +945,7 @@ fn parseDie(
     const attrs = attrs_buf[0..table_entry.attrs.len];
     for (attrs, table_entry.attrs) |*result_attr, attr| result_attr.* = .{
         .id = attr.id,
-        .value = try parseFormValue(fr, attr.form_id, format, endian, addr_size_bytes, attr.payload),
+        .value = try parseFormValue(fr, attr.form_id, format, endian, addr_size_bytes, attr.payload, version),
     };
     return .{
         .tag_id = table_entry.tag_id,
@@ -1042,7 +1048,7 @@ fn runLineNumberProgram(d: *Dwarf, gpa: Allocator, endian: Endian, compile_unit:
             for (try directories.addManyAsSlice(gpa, directories_count)) |*e| {
                 e.* = .{ .path = &.{} };
                 for (dir_ent_fmt_buf[0..directory_entry_format_count]) |ent_fmt| {
-                    const form_value = try parseFormValue(&fr, ent_fmt.form_code, unit_header.format, endian, addr_size_bytes, null);
+                    const form_value = try parseFormValue(&fr, ent_fmt.form_code, unit_header.format, endian, addr_size_bytes, null, version);
                     switch (ent_fmt.content_type_code) {
                         DW.LNCT.path => e.path = try form_value.getString(d.*),
                         DW.LNCT.directory_index => e.dir_index = try form_value.getUInt(u32),
@@ -1074,7 +1080,7 @@ fn runLineNumberProgram(d: *Dwarf, gpa: Allocator, endian: Endian, compile_unit:
         for (try file_entries.addManyAsSlice(gpa, file_names_count)) |*e| {
             e.* = .{ .path = &.{} };
             for (file_ent_fmt_buf[0..file_name_entry_format_count]) |ent_fmt| {
-                const form_value = try parseFormValue(&fr, ent_fmt.form_code, unit_header.format, endian, addr_size_bytes, null);
+                const form_value = try parseFormValue(&fr, ent_fmt.form_code, unit_header.format, endian, addr_size_bytes, null, version);
                 switch (ent_fmt.content_type_code) {
                     DW.LNCT.path => e.path = try form_value.getString(d.*),
                     DW.LNCT.directory_index => e.dir_index = try form_value.getUInt(u32),
@@ -1089,6 +1095,16 @@ fn runLineNumberProgram(d: *Dwarf, gpa: Allocator, endian: Endian, compile_unit:
             }
         }
     }
+
+    const abbrev_table = try d.getAbbrevTable(gpa, compile_unit.abbrev_offset);
+    const attrs_buf = try gpa.alloc(Die.Attr, max_attrs: {
+        var max_attrs: usize = 0;
+        for (abbrev_table.abbrevs) |abbrev| {
+            max_attrs = @max(max_attrs, abbrev.attrs.len);
+        }
+        break :max_attrs max_attrs;
+    });
+    defer gpa.free(attrs_buf);
 
     var prog = LineNumberProgram.init(default_is_stmt, version);
     var line_table: CompileUnit.SrcLocCache.LineTable = .{};
@@ -1136,6 +1152,64 @@ fn runLineNumberProgram(d: *Dwarf, gpa: Allocator, endian: Endian, compile_unit:
                         .mtime = mtime,
                         .size = size,
                     });
+                },
+                DW.LNE.ZIG_set_decl => {
+                    const decl_die_offset = try readFormatSizedInt(&fr, unit_header.format, endian);
+                    var di_fr: Reader = .fixed(d.section(.debug_info) orelse continue);
+                    di_fr.seek = @intCast(decl_die_offset);
+                    var die = (try parseDie(
+                        &di_fr,
+                        attrs_buf,
+                        abbrev_table,
+                        unit_header.format,
+                        endian,
+                        addr_size_bytes,
+                        compile_unit.version,
+                    )) orelse continue;
+                    if (die.getAttr(AT.low_pc)) |_| {
+                        prog.address = try die.getAttrAddr(d, endian, AT.low_pc, compile_unit);
+                    }
+                    if (die.getAttr(AT.decl_line)) |decl_line| {
+                        prog.line = try decl_line.getUInt(i64);
+                    }
+                    if (die.getAttr(AT.decl_column)) |decl_column| {
+                        prog.column = try decl_column.getUInt(u64);
+                    }
+                    while (die.getAttr(AT.decl_file) == null) {
+                        if (die.getAttr(AT.abstract_origin)) |_| {
+                            di_fr.seek = @intCast(try die.getAttrRef(
+                                AT.abstract_origin,
+                                compile_unit.offset,
+                                compile_unit.size,
+                            ));
+                        } else if (die.getAttr(AT.specification)) |_| {
+                            di_fr.seek = @intCast(try die.getAttrRef(
+                                AT.specification,
+                                compile_unit.offset,
+                                compile_unit.size,
+                            ));
+                        } else if (die.getAttr(AT.ZIG_parent)) |_| {
+                            di_fr.seek = @intCast(try die.getAttrRef(
+                                AT.ZIG_parent,
+                                compile_unit.offset,
+                                compile_unit.size,
+                            ));
+                        } else {
+                            // no parent, so we can't find DW_AT_decl_file
+                            break;
+                        }
+                        die = (try parseDie(
+                            &di_fr,
+                            attrs_buf,
+                            abbrev_table,
+                            unit_header.format,
+                            endian,
+                            addr_size_bytes,
+                            compile_unit.version,
+                        )) orelse break;
+                    } else {
+                        prog.file = try die.getAttr(AT.decl_file).?.getUInt(usize);
+                    }
                 },
                 else => try fr.discardAll64(op_size - 1),
             }
@@ -1204,10 +1278,13 @@ fn runLineNumberProgram(d: *Dwarf, gpa: Allocator, endian: Endian, compile_unit:
         }
     }{ .keys = line_table.keys() });
 
+    try directories.shrinkToLen(gpa);
+    try file_entries.shrinkToLen(gpa);
+
     return .{
         .line_table = line_table,
-        .directories = try directories.toOwnedSlice(gpa),
-        .files = try file_entries.toOwnedSlice(gpa),
+        .directories = directories.toOwnedSliceAssert(),
+        .files = file_entries.toOwnedSliceAssert(),
         .version = version,
     };
 }
@@ -1282,6 +1359,7 @@ fn parseFormValue(
     endian: Endian,
     addr_size_bytes: u8,
     implicit_const: ?i64,
+    version: u16,
 ) ScanError!FormValue {
     return switch (form_id) {
         // DWARF5.pdf page 213: the size of this value is encoded in the
@@ -1316,7 +1394,12 @@ fn parseFormValue(
         FORM.ref8 => .{ .ref = try r.takeInt(u64, endian) },
         FORM.ref_udata => .{ .ref = try r.takeLeb128(u64) },
 
-        FORM.ref_addr => .{ .ref_addr = try readFormatSizedInt(r, format, endian) },
+        FORM.ref_addr => .{
+            .ref_addr = switch (version) {
+                2 => try readAddress(r, endian, addr_size_bytes),
+                else => try readFormatSizedInt(r, format, endian),
+            },
+        },
         FORM.ref_sig8 => .{ .ref = try r.takeInt(u64, endian) },
 
         FORM.string => .{ .string = try r.takeSentinel(0) },
@@ -1327,7 +1410,7 @@ fn parseFormValue(
         FORM.strx4 => .{ .strx = try r.takeInt(u32, endian) },
         FORM.strx => .{ .strx = try r.takeLeb128(usize) },
         FORM.line_strp => .{ .line_strp = try readFormatSizedInt(r, format, endian) },
-        FORM.indirect => parseFormValue(r, try r.takeLeb128(u64), format, endian, addr_size_bytes, implicit_const),
+        FORM.indirect => parseFormValue(r, try r.takeLeb128(u64), format, endian, addr_size_bytes, implicit_const, version),
         FORM.implicit_const => .{ .sdata = implicit_const orelse return bad() },
         FORM.loclistx => .{ .loclistx = try r.takeLeb128(u64) },
         FORM.rnglistx => .{ .rnglistx = try r.takeLeb128(u64) },
@@ -1343,7 +1426,7 @@ const FileEntry = struct {
     dir_index: u32 = 0,
     mtime: u64 = 0,
     size: u64 = 0,
-    md5: [16]u8 = [1]u8{0} ** 16,
+    md5: [16]u8 = @splat(0),
 };
 
 const LineNumberProgram = struct {
@@ -1433,6 +1516,7 @@ pub fn compactUnwindToDwarfRegNumber(unwind_reg_number: u3) !u16 {
 pub fn ipRegNum(arch: std.Target.Cpu.Arch) ?u16 {
     return switch (arch) {
         .aarch64, .aarch64_be => 32,
+        .alpha => 64,
         .arc, .arceb => 160,
         .arm, .armeb, .thumb, .thumbeb => 15,
         .csky => 64,
@@ -1441,12 +1525,13 @@ pub fn ipRegNum(arch: std.Target.Cpu.Arch) ?u16 {
         .lanai => 2,
         .loongarch32, .loongarch64 => 64,
         .m68k => 26,
+        .m88k => 64,
         .mips, .mipsel, .mips64, .mips64el => 66,
         .or1k => 35,
         .powerpc, .powerpcle, .powerpc64, .powerpc64le => 67,
         .riscv32, .riscv32be, .riscv64, .riscv64be => 65,
         .s390x => 65,
-        .sparc, .sparc64 => 32,
+        .sparc, .sparc64 => 65,
         .ve => 144,
         .x86 => 8,
         .x86_64 => 16,
@@ -1457,6 +1542,7 @@ pub fn ipRegNum(arch: std.Target.Cpu.Arch) ?u16 {
 pub fn fpRegNum(arch: std.Target.Cpu.Arch) u16 {
     return switch (arch) {
         .aarch64, .aarch64_be => 29,
+        .alpha => 15,
         .arc, .arceb => 27,
         .arm, .armeb, .thumb, .thumbeb => 11,
         .csky => 14,
@@ -1465,6 +1551,7 @@ pub fn fpRegNum(arch: std.Target.Cpu.Arch) u16 {
         .lanai => 5,
         .loongarch32, .loongarch64 => 22,
         .m68k => 14,
+        .m88k => 30,
         .mips, .mipsel, .mips64, .mips64el => 30,
         .or1k => 2,
         .powerpc, .powerpcle, .powerpc64, .powerpc64le => 1,
@@ -1481,6 +1568,7 @@ pub fn fpRegNum(arch: std.Target.Cpu.Arch) u16 {
 pub fn spRegNum(arch: std.Target.Cpu.Arch) u16 {
     return switch (arch) {
         .aarch64, .aarch64_be => 31,
+        .alpha => 30,
         .arc, .arceb => 28,
         .arm, .armeb, .thumb, .thumbeb => 13,
         .csky => 14,
@@ -1489,6 +1577,7 @@ pub fn spRegNum(arch: std.Target.Cpu.Arch) u16 {
         .lanai => 4,
         .loongarch32, .loongarch64 => 3,
         .m68k => 15,
+        .m88k => 31,
         .mips, .mipsel, .mips64, .mips64el => 29,
         .or1k => 1,
         .powerpc, .powerpcle, .powerpc64, .powerpc64le => 1,

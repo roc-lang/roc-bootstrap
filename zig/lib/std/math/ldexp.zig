@@ -1,3 +1,4 @@
+const builtin = @import("builtin");
 const std = @import("std");
 const math = std.math;
 const Log2Int = std.math.Log2Int;
@@ -7,7 +8,7 @@ const expect = std.testing.expect;
 /// Returns x * 2^n.
 pub fn ldexp(x: anytype, n: i32) @TypeOf(x) {
     const T = @TypeOf(x);
-    const TBits = std.meta.Int(.unsigned, @typeInfo(T).float.bits);
+    const TBits = @Int(.unsigned, @typeInfo(T).float.bits);
 
     const exponent_bits = math.floatExponentBits(T);
     const mantissa_bits = math.floatMantissaBits(T);
@@ -67,6 +68,9 @@ pub fn ldexp(x: anytype, n: i32) @TypeOf(x) {
 }
 
 test ldexp {
+    if (builtin.zig_backend == .stage2_c and builtin.cpu.arch.isAarch64() and builtin.os.tag == .netbsd) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/36765
+    if (builtin.zig_backend == .stage2_llvm and builtin.cpu.arch.isAarch64() and builtin.os.tag == .netbsd) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/36765
+
     // subnormals
     try expect(ldexp(@as(f16, 0x1.1FFp14), -14 - 9 - 15) == math.floatTrueMin(f16));
     try expect(ldexp(@as(f32, 0x1.3FFFFFp-1), -126 - 22) == math.floatTrueMin(f32));
@@ -103,7 +107,7 @@ test ldexp {
 
         // Multiplications might flush the denormals to zero, esp. at
         // runtime, so we manually construct the constants here instead.
-        const Z = std.meta.Int(.unsigned, @bitSizeOf(T));
+        const Z = @Int(.unsigned, @bitSizeOf(T));
         const EightTimesTrueMin = @as(T, @bitCast(@as(Z, 8)));
         const TwoTimesTrueMin = @as(T, @bitCast(@as(Z, 2)));
 

@@ -73,6 +73,7 @@ pub const DynamicSection = struct {
         if (dt.rpath > 0) nentries += 1; // RUNPATH
         if (elf_file.sectionByName(".init") != null) nentries += 1; // INIT
         if (elf_file.sectionByName(".fini") != null) nentries += 1; // FINI
+        if (elf_file.sectionByName(".preinit_array") != null) nentries += 2; // PREINIT_ARRAY
         if (elf_file.sectionByName(".init_array") != null) nentries += 2; // INIT_ARRAY
         if (elf_file.sectionByName(".fini_array") != null) nentries += 2; // FINI_ARRAY
         if (elf_file.section_indexes.rela_dyn != null) nentries += 3; // RELA
@@ -122,6 +123,13 @@ pub const DynamicSection = struct {
         if (elf_file.sectionByName(".fini")) |shndx| {
             const addr = shdrs[shndx].sh_addr;
             try writer.writeStruct(@as(elf.Elf64_Dyn, .{ .d_tag = elf.DT_FINI, .d_val = addr }), .little);
+        }
+
+        // PREINIT_ARRAY
+        if (elf_file.sectionByName(".preinit_array")) |shndx| {
+            const shdr = shdrs[shndx];
+            try writer.writeStruct(@as(elf.Elf64_Dyn, .{ .d_tag = elf.DT_PREINIT_ARRAY, .d_val = shdr.sh_addr }), .little);
+            try writer.writeStruct(@as(elf.Elf64_Dyn, .{ .d_tag = elf.DT_PREINIT_ARRAYSZ, .d_val = shdr.sh_size }), .little);
         }
 
         // INIT_ARRAY
@@ -764,6 +772,7 @@ pub const PltSection = struct {
 
     const x86_64 = struct {
         fn write(plt: PltSection, elf_file: *Elf, writer: *std.Io.Writer) !void {
+            dev.checkAny(&.{ .llvm_backend, .x86_64_backend });
             const shdrs = elf_file.sections.items(.shdr);
             const plt_addr = shdrs[elf_file.section_indexes.plt.?].sh_addr;
             const got_plt_addr = shdrs[elf_file.section_indexes.got_plt.?].sh_addr;
@@ -799,6 +808,7 @@ pub const PltSection = struct {
 
     const aarch64 = struct {
         fn write(plt: PltSection, elf_file: *Elf, writer: *std.Io.Writer) !void {
+            dev.checkAny(&.{ .llvm_backend, .aarch64_backend });
             {
                 const shdrs = elf_file.sections.items(.shdr);
                 const plt_addr: i64 = @intCast(shdrs[elf_file.section_indexes.plt.?].sh_addr);
@@ -941,6 +951,7 @@ pub const PltGotSection = struct {
 
     const x86_64 = struct {
         pub fn write(plt_got: PltGotSection, elf_file: *Elf, writer: *std.Io.Writer) !void {
+            dev.checkAny(&.{ .llvm_backend, .x86_64_backend });
             for (plt_got.symbols.items) |ref| {
                 const sym = elf_file.symbol(ref).?;
                 const target_addr = sym.gotAddress(elf_file);
@@ -959,6 +970,7 @@ pub const PltGotSection = struct {
 
     const aarch64 = struct {
         fn write(plt_got: PltGotSection, elf_file: *Elf, writer: *std.Io.Writer) !void {
+            dev.checkAny(&.{ .llvm_backend, .aarch64_backend });
             for (plt_got.symbols.items) |ref| {
                 const sym = elf_file.symbol(ref).?;
                 const target_addr = sym.gotAddress(elf_file);
@@ -1510,6 +1522,7 @@ fn writeInt(value: anytype, elf_file: *Elf, writer: *std.Io.Writer) !void {
 
 const assert = std.debug.assert;
 const builtin = @import("builtin");
+const dev = @import("../../dev.zig");
 const elf = std.elf;
 const math = std.math;
 const mem = std.mem;

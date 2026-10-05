@@ -53,7 +53,7 @@ const trailing_slash_case: Case = .{
     .data = @embedFile("testdata/trailing-slash.tar"),
     .files = &[_]Case.File{
         .{
-            .name = "123456789/" ** 30,
+            .name = @ptrCast(&@as([30][10]u8, @splat("123456789/".*))),
             .kind = .directory,
         },
     },
@@ -64,7 +64,11 @@ const writer_big_long_case: Case = .{
     .data = @embedFile("testdata/writer-big-long.tar"),
     .files = &[_]Case.File{
         .{
-            .name = "longname/" ** 15 ++ "16gig.txt",
+            .name = name: {
+                const buf: [15][9]u8 = @splat("longname/".*);
+                const dir: []const u8 = @ptrCast(&buf);
+                break :name dir ++ "16gig.txt";
+            },
             .size = 16 * 1024 * 1024 * 1024,
             .mode = 0o644,
             .truncated = true,
@@ -470,14 +474,14 @@ test "should not overwrite existing file" {
     defer root.cleanup();
     try testing.expectError(
         error.PathAlreadyExists,
-        tar.pipeToFileSystem(io, root.dir, &r, .{ .mode_mode = .ignore, .strip_components = 1 }),
+        tar.extract(io, root.dir, &r, .{ .mode_mode = .ignore, .strip_components = 1 }),
     );
 
     // Unpack with strip_components = 0 should pass
     r = .fixed(data);
     var root2 = std.testing.tmpDir(.{});
     defer root2.cleanup();
-    try tar.pipeToFileSystem(io, root2.dir, &r, .{ .mode_mode = .ignore, .strip_components = 0 });
+    try tar.extract(io, root2.dir, &r, .{ .mode_mode = .ignore, .strip_components = 0 });
 }
 
 test "case sensitivity" {
@@ -497,7 +501,7 @@ test "case sensitivity" {
     var root = std.testing.tmpDir(.{});
     defer root.cleanup();
 
-    tar.pipeToFileSystem(io, root.dir, &r, .{ .mode_mode = .ignore, .strip_components = 1 }) catch |err| {
+    tar.extract(io, root.dir, &r, .{ .mode_mode = .ignore, .strip_components = 1 }) catch |err| {
         // on case insensitive fs we fail on overwrite existing file
         try testing.expectEqual(error.PathAlreadyExists, err);
         return;

@@ -54,7 +54,7 @@ pub const EXC = enum(exception_type_t) {
 
     _,
 
-    pub const TYPES_COUNT = @typeInfo(EXC).@"enum".fields.len;
+    pub const TYPES_COUNT = @typeInfo(EXC).@"enum".field_names.len;
     pub const SOFT_SIGNAL = 0x10003;
 
     pub const MASK = packed struct(u32) {
@@ -380,6 +380,18 @@ pub const copyfile_state_t = *opaque {};
 pub extern "c" fn fcopyfile(from: fd_t, to: fd_t, state: ?copyfile_state_t, flags: COPYFILE) c_int;
 pub extern "c" fn __getdirentries64(fd: c_int, buf_ptr: [*]u8, buf_len: usize, basep: *i64) isize;
 
+pub const RENAME = packed struct(u32) {
+    SECLUDE: bool = false,
+    SWAP: bool = false,
+    EXCL: bool = false,
+    RESERVED1: bool = false,
+    NOFOLLOW_ANY: bool = false,
+    RESOLVE_BENEATH: bool = false,
+    _: u26 = 0,
+};
+
+pub extern "c" fn renameatx_np(fromfd: c_int, from: [*:0]const u8, tofd: c_int, to: [*:0]const u8, flags: RENAME) c_int;
+
 pub extern "c" fn mach_absolute_time() u64;
 pub extern "c" fn mach_continuous_time() u64;
 pub extern "c" fn mach_timebase_info(tinfo: ?*mach_timebase_info_data) kern_return_t;
@@ -545,6 +557,13 @@ pub extern "c" fn mach_vm_read(
     size: mach_vm_size_t,
     data: *vm_offset_t,
     data_cnt: *mach_msg_type_number_t,
+) kern_return_t;
+pub extern "c" fn mach_vm_read_overwrite(
+    target_task: vm_map_read_t,
+    address: mach_vm_address_t,
+    size: mach_vm_size_t,
+    data: mach_vm_address_t,
+    outsize: *mach_vm_size_t,
 ) kern_return_t;
 pub extern "c" fn mach_vm_write(
     target_task: vm_map_t,
@@ -1119,10 +1138,10 @@ pub const mach_msg_return_t = enum(kern_return_t) {
         error_code: mach_msg_return_t,
         resource_error: ?MACH.MSG,
     } {
-        const return_code: mach_msg_return_t = @enumFromInt(@intFromEnum(ret) & ~MACH.MSG.MASK);
+        const return_code: mach_msg_return_t = @fromBackingInt(@intCast(@backingInt(ret) & ~MACH.MSG.MASK));
         switch (return_code) {
             .RCV_HEADER_ERROR, .RCV_BODY_ERROR => {
-                const resource_error: MACH.MSG = @bitCast(@intFromEnum(ret) & MACH.MSG.MASK);
+                const resource_error: MACH.MSG = @bitCast(@backingInt(ret) & MACH.MSG.MASK);
                 return .{
                     .error_code = return_code,
                     .resource_error = resource_error,
@@ -1184,6 +1203,10 @@ pub const CPUFAMILY = enum(u32) {
     ARM_BRAVA = 0x17d5b93a,
     ARM_TAHITI = 0x75d4acb9,
     ARM_TUPAI = 0x204526d0,
+    ARM_HIDRA = 0x1d5a87e8,
+    ARM_SOTRA = 0xf76c5b1a,
+    ARM_THERA = 0xab345f09,
+    ARM_TILOS = 0x01d7a72b,
     _,
 };
 
@@ -1230,8 +1253,10 @@ pub const posix_spawnattr_t = *opaque {};
 pub const posix_spawn_file_actions_t = *opaque {};
 pub extern "c" fn posix_spawnattr_init(attr: *posix_spawnattr_t) c_int;
 pub extern "c" fn posix_spawnattr_destroy(attr: *posix_spawnattr_t) c_int;
-pub extern "c" fn posix_spawnattr_setflags(attr: *posix_spawnattr_t, flags: POSIX_SPAWN) c_int;
 pub extern "c" fn posix_spawnattr_getflags(attr: *const posix_spawnattr_t, flags: *POSIX_SPAWN) c_int;
+pub extern "c" fn posix_spawnattr_getpgroup(attr: *const posix_spawnattr_t, pgroup: *pid_t) c_int;
+pub extern "c" fn posix_spawnattr_setflags(attr: *posix_spawnattr_t, flags: POSIX_SPAWN) c_int;
+pub extern "c" fn posix_spawnattr_setpgroup(attr: *posix_spawnattr_t, pgroup: pid_t) c_int;
 pub extern "c" fn posix_spawn_file_actions_init(actions: *posix_spawn_file_actions_t) c_int;
 pub extern "c" fn posix_spawn_file_actions_destroy(actions: *posix_spawn_file_actions_t) c_int;
 pub extern "c" fn posix_spawn_file_actions_addclose(actions: *posix_spawn_file_actions_t, filedes: fd_t) c_int;
@@ -1490,6 +1515,8 @@ pub const E = enum(u16) {
     OWNERDEAD = 105,
     /// Interface output queue is full
     QFULL = 106,
+    /// Capabilities insufficient
+    NOTCAPABLE = 107,
     _,
 };
 

@@ -57,12 +57,6 @@ pub fn gen(smith: *Smith) TokenSmith {
             @memcpy(t.source_buf[t.source_len..][0..lexeme.len], lexeme);
             t.source_len += @intCast(lexeme.len);
 
-            if (tag == .invalid_periodasterisks) {
-                t.tag_buf[t.tags_len] = .asterisk;
-                t.start_buf[t.tags_len] = t.source_len - 1;
-                t.tags_len += 1;
-            }
-
             t.source_buf[t.source_len] = '\n';
             t.source_len += 1;
         } else sw: switch (tag) {
@@ -254,8 +248,8 @@ pub fn list(t: *TokenSmith) TokenList.Slice {
         .capacity = t.tags_len,
     };
     comptime std.debug.assert(slice.ptrs.len == 2);
-    slice.ptrs[@intFromEnum(TokenList.Field.tag)] = @ptrCast(&t.tag_buf);
-    slice.ptrs[@intFromEnum(TokenList.Field.start)] = @ptrCast(&t.start_buf);
+    slice.ptrs[@backingInt(TokenList.Field.tag)] = @ptrCast(&t.tag_buf);
+    slice.ptrs[@backingInt(TokenList.Field.start)] = @ptrCast(&t.start_buf);
     return slice;
 }
 

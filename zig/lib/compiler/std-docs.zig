@@ -18,7 +18,7 @@ fn usage(io: Io) noreturn {
         \\                            By default, enabled unless a port is specified.
         \\
     ) catch {};
-    std.process.exit(1);
+    std.process.exit(0);
 }
 
 pub fn main(init: std.process.Init) !void {
@@ -29,9 +29,9 @@ pub fn main(init: std.process.Init) !void {
     var argv = try init.minimal.args.iterateAllocator(arena);
     defer argv.deinit();
     assert(argv.skip());
-    const zig_lib_directory = argv.next().?;
-    const zig_exe_path = argv.next().?;
-    const global_cache_path = argv.next().?;
+    const zig_lib_directory = mem.cutPrefix(u8, argv.next().?, "--zig-lib=") orelse @panic("bad --zig-lib= arg");
+    const zig_exe_path = mem.cutPrefix(u8, argv.next().?, "--zig=") orelse @panic("bad --zig= arg");
+    const global_cache_path = mem.cutPrefix(u8, argv.next().?, "--global-cache=") orelse @panic("bad --global-cache= arg");
 
     var lib_dir = try Io.Dir.cwd().openDir(io, zig_lib_directory, .{});
     defer lib_dir.close(io);
@@ -142,9 +142,9 @@ fn serveRequest(request: *std.http.Server.Request, context: *Context) !void {
     {
         try serveDocsFile(request, context, "docs/main.js", "application/javascript");
     } else if (std.mem.eql(u8, request.head.target, "/main.wasm")) {
-        try serveWasm(request, context, .ReleaseFast);
+        try serveWasm(request, context, .fast);
     } else if (std.mem.eql(u8, request.head.target, "/debug/main.wasm")) {
-        try serveWasm(request, context, .Debug);
+        try serveWasm(request, context, .debug);
     } else if (std.mem.eql(u8, request.head.target, "/sources.tar") or
         std.mem.eql(u8, request.head.target, "/debug/sources.tar"))
     {
@@ -259,7 +259,7 @@ fn serveSourcesTar(request: *std.http.Server.Request, context: *Context) !void {
 fn serveWasm(
     request: *std.http.Server.Request,
     context: *Context,
-    optimize_mode: std.builtin.OptimizeMode,
+    optimize_mode: std.builtin.Optimize,
 ) !void {
     const gpa = context.gpa;
     const io = context.io;
@@ -271,12 +271,16 @@ fn serveWasm(
     // Do the compilation every request, so that the user can edit the files
     // and see the changes without restarting the server.
     const wasm_base_path = try buildWasmBinary(arena, context, optimize_mode);
+    const target = std.zig.system.resolveTargetQuery(io, std.Build.parseTargetQuery(.{
+        .arch_os_abi = autodoc_arch_os_abi,
+        .cpu_features = autodoc_cpu_features,
+    }) catch unreachable) catch unreachable;
     const bin_name = try std.zig.binNameAlloc(arena, .{
         .root_name = autodoc_root_name,
-        .target = &(std.zig.system.resolveTargetQuery(io, std.Build.parseTargetQuery(.{
-            .arch_os_abi = autodoc_arch_os_abi,
-            .cpu_features = autodoc_cpu_features,
-        }) catch unreachable) catch unreachable),
+        .cpu_arch = target.cpu.arch,
+        .os_tag = target.os.tag,
+        .ofmt = target.ofmt,
+        .abi = target.abi,
         .output_mode = .Exe,
     });
     // std.http.Server does not have a sendfile API yet.
@@ -298,7 +302,7 @@ const autodoc_cpu_features = "baseline+atomics+bulk_memory+multivalue+mutable_gl
 fn buildWasmBinary(
     arena: Allocator,
     context: *Context,
-    optimize_mode: std.builtin.OptimizeMode,
+    optimize_mode: std.builtin.Optimize,
 ) !Cache.Path {
     const gpa = context.gpa;
     const io = context.io;
@@ -342,29 +346,39 @@ fn buildWasmBinary(
     multi_reader.init(gpa, io, multi_reader_buffer.toStreams(), &.{ child.stdout.?, child.stderr.? });
     defer multi_reader.deinit();
 
-    try sendMessage(io, child.stdin.?, .update);
-    try sendMessage(io, child.stdin.?, .exit);
+    const stdout = multi_reader.reader(0);
+
+    var stdin_buffer: [256]u8 = undefined;
+    var stdin_writer = child.stdin.?.writerStreaming(io, &stdin_buffer);
+
+    var client: std.zig.Client = .{
+        .in = stdout,
+        .out = &stdin_writer.interface,
+    };
+
+    try client.serveMessageHeader(.{ .tag = .update, .bytes_len = 0 });
+    try client.serveMessageHeader(.{ .tag = .exit, .bytes_len = 0 });
+    try client.out.flush();
 
     var result: ?Cache.Path = null;
     var result_error_bundle = std.zig.ErrorBundle.empty;
 
-    const stdout = multi_reader.fileReader(0);
-    const MessageHeader = std.zig.Server.Message.Header;
-
     var eos_err: error{EndOfStream}!void = {};
 
     while (true) {
-        const header = stdout.interface.takeStruct(MessageHeader, .little) catch |err| switch (err) {
-            error.EndOfStream => break,
-            error.ReadFailed => return stdout.err.?,
-        };
-        const body = stdout.interface.take(header.bytes_len) catch |err| switch (err) {
+        const header = client.receiveMessageWithMultiReader(&multi_reader, .none) catch |err| switch (err) {
+            error.Timeout => unreachable,
             error.EndOfStream => |e| {
+                if (client.in.bufferedLen() == 0) break;
+                // Better to report the crash with stderr below, but we set
+                // this in case the child exits successfully while violating
+                // this protocol.
                 eos_err = e;
                 break;
             },
-            error.ReadFailed => return stdout.err.?,
+            else => |e| return e,
         };
+        const body = client.in.take(header.bytes_len) catch unreachable;
 
         switch (header.tag) {
             .zig_version => {
@@ -406,64 +420,28 @@ fn buildWasmBinary(
     child.stdin.?.close(io);
     child.stdin = null;
 
-    switch (try child.wait(io)) {
-        .exited => |code| {
-            if (code != 0) {
-                std.log.err(
-                    "the following command exited with error code {d}:\n{s}",
-                    .{ code, try std.Build.Step.allocPrintCmd(arena, .inherit, null, argv.items) },
-                );
-                return error.WasmCompilationFailed;
-            }
-        },
-        .signal => |sig| {
-            std.log.err(
-                "the following command terminated with signal {t}:\n{s}",
-                .{ sig, try std.Build.Step.allocPrintCmd(arena, .inherit, null, argv.items) },
-            );
-            return error.WasmCompilationFailed;
-        },
-        .stopped => |sig| {
-            std.log.err(
-                "the following command stopped unexpectedly with signal {t}:\n{s}",
-                .{ sig, try std.Build.Step.allocPrintCmd(arena, .inherit, null, argv.items) },
-            );
-            return error.WasmCompilationFailed;
-        },
-        .unknown => {
-            std.log.err(
-                "the following command terminated unexpectedly:\n{s}",
-                .{try std.Build.Step.allocPrintCmd(arena, .inherit, null, argv.items)},
-            );
-            return error.WasmCompilationFailed;
-        },
+    const term = try child.wait(io);
+    if (!term.success()) {
+        std.log.err("the following command {f}:\n{s}", .{
+            term, try std.zig.allocPrintCmd(arena, argv.items, .{}),
+        });
+        return error.WasmCompilationFailed;
     }
 
     if (result_error_bundle.errorMessageCount() > 0) {
         try result_error_bundle.renderToStderr(io, .{}, .auto);
         std.log.err("the following command failed with {d} compilation errors:\n{s}", .{
             result_error_bundle.errorMessageCount(),
-            try std.Build.Step.allocPrintCmd(arena, .inherit, null, argv.items),
+            try std.zig.allocPrintCmd(arena, argv.items, .{}),
         });
         return error.WasmCompilationFailed;
     }
 
     return result orelse {
         std.log.err("child process failed to report result\n{s}", .{
-            try std.Build.Step.allocPrintCmd(arena, .inherit, null, argv.items),
+            try std.zig.allocPrintCmd(arena, argv.items, .{}),
         });
         return error.WasmCompilationFailed;
-    };
-}
-
-fn sendMessage(io: Io, file: Io.File, tag: std.zig.Client.Message.Tag) !void {
-    const header: std.zig.Client.Message.Header = .{
-        .tag = tag,
-        .bytes_len = 0,
-    };
-    var w = file.writer(io, &.{});
-    w.interface.writeStruct(header, .little) catch |err| switch (err) {
-        error.WriteFailed => return w.err.?,
     };
 }
 

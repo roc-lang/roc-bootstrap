@@ -11,13 +11,18 @@ const Alignment = std.mem.Alignment;
 
 pub const ArenaAllocator = @import("heap/ArenaAllocator.zig");
 pub const SmpAllocator = @import("heap/SmpAllocator.zig");
+pub const SafeAllocator = @import("heap/SafeAllocator.zig");
 pub const FixedBufferAllocator = @import("heap/FixedBufferAllocator.zig");
+pub const BufferFirstAllocator = @import("heap/BufferFirstAllocator.zig");
 pub const PageAllocator = @import("heap/PageAllocator.zig");
 pub const WasmAllocator = if (builtin.single_threaded) BrkAllocator else @compileError("unimplemented");
 pub const BrkAllocator = @import("heap/BrkAllocator.zig");
 
+/// Deprecated; use `SafeAllocator.Options`.
 pub const DebugAllocatorConfig = @import("heap/debug_allocator.zig").Config;
+/// Deprecated; use `SafeAllocator`.
 pub const DebugAllocator = @import("heap/debug_allocator.zig").DebugAllocator;
+/// Deprecated.
 pub const Check = enum { ok, leak };
 
 /// A memory pool that can allocate objects of a single type very quickly.
@@ -28,13 +33,6 @@ pub fn MemoryPool(comptime Item: type) type {
     return memory_pool.Extra(Item, .{ .alignment = null });
 }
 pub const memory_pool = @import("heap/memory_pool.zig");
-
-/// Deprecated; use `memory_pool.Aligned`.
-pub const MemoryPoolAligned = memory_pool.Aligned;
-/// Deprecated; use `memory_pool.Extra`.
-pub const MemoryPoolExtra = memory_pool.Extra;
-/// Deprecated; use `memory_pool.Options`.
-pub const MemoryPoolOptions = memory_pool.Options;
 
 /// comptime-known minimum page size of the target.
 ///
@@ -80,9 +78,9 @@ pub fn defaultQueryPageSize() usize {
     if (size > 0) return size;
     size = size: switch (builtin.os.tag) {
         .linux => if (builtin.link_libc)
-            @max(std.c.sysconf(@intFromEnum(std.c._SC.PAGESIZE)), 0)
+            @max(std.c.sysconf(@backingInt(std.c._SC.PAGESIZE)), 0)
         else
-            std.os.linux.getauxval(std.elf.AT_PAGESZ),
+            std.os.linux.getauxval(std.elf.AT.PAGESZ),
         .driverkit, .ios, .maccatalyst, .macos, .tvos, .visionos, .watchos => {
             const task_port = std.c.mach_task_self();
             // mach_task_self may fail "if there are any resource failures or other errors".
@@ -111,7 +109,7 @@ pub fn defaultQueryPageSize() usize {
             }
         },
         else => if (builtin.link_libc)
-            @max(std.c.sysconf(@intFromEnum(std.c._SC.PAGESIZE)), 0)
+            @max(std.c.sysconf(@backingInt(std.c._SC.PAGESIZE)), 0)
         else if (builtin.os.tag == .freestanding or builtin.os.tag == .other)
             @compileError("unsupported target: freestanding/other")
         else
@@ -367,113 +365,6 @@ pub const brk_allocator: Allocator = .{
     .vtable = &BrkAllocator.vtable,
 };
 
-/// Returns a `StackFallbackAllocator` allocating using either a
-/// `FixedBufferAllocator` on an array of size `size` and falling back to
-/// `fallback_allocator` if that fails.
-pub fn stackFallback(comptime size: usize, fallback_allocator: Allocator) StackFallbackAllocator(size) {
-    return StackFallbackAllocator(size){
-        .buffer = undefined,
-        .fallback_allocator = fallback_allocator,
-        .fixed_buffer_allocator = undefined,
-    };
-}
-
-/// An allocator that attempts to allocate using a
-/// `FixedBufferAllocator` using an array of size `size`. If the
-/// allocation fails, it will fall back to using
-/// `fallback_allocator`. Easily created with `stackFallback`.
-pub fn StackFallbackAllocator(comptime size: usize) type {
-    return struct {
-        const Self = @This();
-
-        buffer: [size]u8,
-        fallback_allocator: Allocator,
-        fixed_buffer_allocator: FixedBufferAllocator,
-        get_called: if (std.debug.runtime_safety) bool else void =
-            if (std.debug.runtime_safety) false else {},
-
-        /// This function both fetches a `Allocator` interface to this
-        /// allocator *and* resets the internal buffer allocator.
-        pub fn get(self: *Self) Allocator {
-            if (std.debug.runtime_safety) {
-                assert(!self.get_called); // `get` called multiple times; instead use `const allocator = stackFallback(N).get();`
-                self.get_called = true;
-            }
-            self.fixed_buffer_allocator = FixedBufferAllocator.init(self.buffer[0..]);
-            return .{
-                .ptr = self,
-                .vtable = &.{
-                    .alloc = alloc,
-                    .resize = resize,
-                    .remap = remap,
-                    .free = free,
-                },
-            };
-        }
-
-        /// Unlike most std allocators `StackFallbackAllocator` modifies
-        /// its internal state before returning an implementation of
-        /// the`Allocator` interface and therefore also doesn't use
-        /// the usual `.allocator()` method.
-        pub const allocator = @compileError("use 'const allocator = stackFallback(N).get();' instead");
-
-        fn alloc(
-            ctx: *anyopaque,
-            len: usize,
-            alignment: Alignment,
-            ra: usize,
-        ) ?[*]u8 {
-            const self: *Self = @ptrCast(@alignCast(ctx));
-            return FixedBufferAllocator.alloc(&self.fixed_buffer_allocator, len, alignment, ra) orelse
-                return self.fallback_allocator.rawAlloc(len, alignment, ra);
-        }
-
-        fn resize(
-            ctx: *anyopaque,
-            buf: []u8,
-            alignment: Alignment,
-            new_len: usize,
-            ra: usize,
-        ) bool {
-            const self: *Self = @ptrCast(@alignCast(ctx));
-            if (self.fixed_buffer_allocator.ownsPtr(buf.ptr)) {
-                return FixedBufferAllocator.resize(&self.fixed_buffer_allocator, buf, alignment, new_len, ra);
-            } else {
-                return self.fallback_allocator.rawResize(buf, alignment, new_len, ra);
-            }
-        }
-
-        fn remap(
-            context: *anyopaque,
-            memory: []u8,
-            alignment: Alignment,
-            new_len: usize,
-            return_address: usize,
-        ) ?[*]u8 {
-            const self: *Self = @ptrCast(@alignCast(context));
-            if (self.fixed_buffer_allocator.ownsPtr(memory.ptr)) {
-                return FixedBufferAllocator.remap(&self.fixed_buffer_allocator, memory, alignment, new_len, return_address);
-            } else {
-                return self.fallback_allocator.rawRemap(memory, alignment, new_len, return_address);
-            }
-        }
-
-        fn free(
-            ctx: *anyopaque,
-            buf: []u8,
-            alignment: Alignment,
-            ra: usize,
-        ) void {
-            const self: *Self = @ptrCast(@alignCast(ctx));
-            if (self.fixed_buffer_allocator.ownsPtr(buf.ptr)) {
-                return FixedBufferAllocator.free(&self.fixed_buffer_allocator, buf, alignment, ra);
-            } else {
-                return self.fallback_allocator.rawFree(buf, alignment, ra);
-            }
-        }
-    };
-}
-
 test c_allocator {
     if (builtin.link_libc) {
         try testAllocator(c_allocator);
@@ -489,6 +380,17 @@ test smp_allocator {
     try testAllocatorAligned(smp_allocator);
     try testAllocatorLargeAlignment(smp_allocator);
     try testAllocatorAlignedShrink(smp_allocator);
+}
+
+test SafeAllocator {
+    var instance: SafeAllocator = .init(page_allocator, .{});
+    defer _ = instance.deinit();
+    const allocator = instance.allocator();
+
+    try testAllocator(allocator);
+    try testAllocatorAligned(allocator);
+    try testAllocatorLargeAlignment(allocator);
+    try testAllocatorAlignedShrink(allocator);
 }
 
 test PageAllocator {
@@ -522,25 +424,6 @@ test ArenaAllocator {
     try testAllocatorAligned(allocator);
     try testAllocatorLargeAlignment(allocator);
     try testAllocatorAlignedShrink(allocator);
-}
-
-test "StackFallbackAllocator" {
-    {
-        var stack_allocator = stackFallback(4096, std.testing.allocator);
-        try testAllocator(stack_allocator.get());
-    }
-    {
-        var stack_allocator = stackFallback(4096, std.testing.allocator);
-        try testAllocatorAligned(stack_allocator.get());
-    }
-    {
-        var stack_allocator = stackFallback(4096, std.testing.allocator);
-        try testAllocatorLargeAlignment(stack_allocator.get());
-    }
-    {
-        var stack_allocator = stackFallback(4096, std.testing.allocator);
-        try testAllocatorAlignedShrink(stack_allocator.get());
-    }
 }
 
 /// This one should not try alignments that exceed what C malloc can handle.
@@ -740,6 +623,7 @@ const page_size_min_default: ?usize = switch (builtin.os.tag) {
         .hppa => 4 << 10,
         .x86, .x86_64 => 4 << 10,
         .thumb, .thumbeb, .arm, .armeb, .aarch64, .aarch64_be => 4 << 10,
+        .m88k => 4 << 10,
         .mips64, .mips64el => 4 << 10,
         .powerpc, .powerpc64, .powerpc64le, .powerpcle => 4 << 10,
         .riscv64 => 4 << 10,
@@ -903,6 +787,7 @@ const page_size_max_default: ?usize = switch (builtin.os.tag) {
         .hppa => 4 << 10,
         .x86, .x86_64 => 4 << 10,
         .thumb, .thumbeb, .arm, .armeb, .aarch64, .aarch64_be => 4 << 10,
+        .m88k => 4 << 10,
         .mips64, .mips64el => 16 << 10,
         .powerpc, .powerpc64, .powerpc64le, .powerpcle => 4 << 10,
         .riscv64 => 4 << 10,
@@ -1010,7 +895,9 @@ test {
     _ = @import("heap/memory_pool.zig");
     _ = ArenaAllocator;
     _ = DebugAllocator(.{});
+    _ = SafeAllocator;
     _ = FixedBufferAllocator;
+    _ = BufferFirstAllocator;
     if (builtin.single_threaded) {
         if (builtin.cpu.arch.isWasm() or (builtin.os.tag == .linux and !builtin.link_libc)) {
             _ = brk_allocator;

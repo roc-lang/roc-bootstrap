@@ -648,7 +648,7 @@ fn ChaChaPoly1305(comptime rounds_nb: usize) type {
             assert(c.len == m.len);
             assert(m.len <= 64 * (@as(u39, 1 << 32) - 1));
 
-            var polyKey = [_]u8{0} ** 32;
+            var polyKey: [32]u8 = @splat(0);
             ChaChaIETF(rounds_nb).xor(polyKey[0..], polyKey[0..], 0, k, npub);
 
             ChaChaIETF(rounds_nb).xor(c[0..m.len], m, 1, k, npub);
@@ -656,13 +656,13 @@ fn ChaChaPoly1305(comptime rounds_nb: usize) type {
             var mac = Poly1305.init(polyKey[0..]);
             mac.update(ad);
             if (ad.len % 16 != 0) {
-                const zeros = [_]u8{0} ** 16;
+                const zeros: [16]u8 = @splat(0);
                 const padding = 16 - (ad.len % 16);
                 mac.update(zeros[0..padding]);
             }
             mac.update(c[0..m.len]);
             if (m.len % 16 != 0) {
-                const zeros = [_]u8{0} ** 16;
+                const zeros: [16]u8 = @splat(0);
                 const padding = 16 - (m.len % 16);
                 mac.update(zeros[0..padding]);
             }
@@ -685,20 +685,20 @@ fn ChaChaPoly1305(comptime rounds_nb: usize) type {
         pub fn decrypt(m: []u8, c: []const u8, tag: [tag_length]u8, ad: []const u8, npub: [nonce_length]u8, k: [key_length]u8) AuthenticationError!void {
             assert(c.len == m.len);
 
-            var polyKey = [_]u8{0} ** 32;
+            var polyKey: [32]u8 = @splat(0);
             ChaChaIETF(rounds_nb).xor(polyKey[0..], polyKey[0..], 0, k, npub);
 
             var mac = Poly1305.init(polyKey[0..]);
 
             mac.update(ad);
             if (ad.len % 16 != 0) {
-                const zeros = [_]u8{0} ** 16;
+                const zeros: [16]u8 = @splat(0);
                 const padding = 16 - (ad.len % 16);
                 mac.update(zeros[0..padding]);
             }
             mac.update(c);
             if (c.len % 16 != 0) {
-                const zeros = [_]u8{0} ** 16;
+                const zeros: [16]u8 = @splat(0);
                 const padding = 16 - (c.len % 16);
                 mac.update(zeros[0..padding]);
             }
@@ -759,8 +759,8 @@ test "AEAD API" {
     const ad = "Additional data";
 
     inline for (aeads) |aead| {
-        const key = [_]u8{69} ** aead.key_length;
-        const nonce = [_]u8{42} ** aead.nonce_length;
+        const key: [aead.key_length]u8 = @splat(69);
+        const nonce: [aead.nonce_length]u8 = @splat(42);
         var c: [m.len]u8 = undefined;
         var tag: [aead.tag_length]u8 = undefined;
         var out: [m.len]u8 = undefined;
@@ -1138,14 +1138,14 @@ test "open" {
 }
 
 test "xchacha20" {
-    const key = [_]u8{69} ** 32;
-    const nonce = [_]u8{42} ** 24;
+    const key: [32]u8 = @splat(69);
+    const nonce: [24]u8 = @splat(42);
     const m = "Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.";
     {
         var c: [m.len]u8 = undefined;
         XChaCha20IETF.xor(c[0..], m[0..], 0, key, nonce);
         var buf: [2 * c.len]u8 = undefined;
-        try testing.expectEqualStrings(try std.fmt.bufPrint(&buf, "{X}", .{&c}), "E0A1BCF939654AFDBDC1746EC49832647C19D891F0D1A81FC0C1703B4514BDEA584B512F6908C2C5E9DD18D5CBC1805DE5803FE3B9CA5F193FB8359E91FAB0C3BB40309A292EB1CF49685C65C4A3ADF4F11DB0CD2B6B67FBC174BC2E860E8F769FD3565BBFAD1C845E05A0FED9BE167C240D");
+        try testing.expectEqualStrings(try std.mem.print(&buf, "{X}", .{&c}), "E0A1BCF939654AFDBDC1746EC49832647C19D891F0D1A81FC0C1703B4514BDEA584B512F6908C2C5E9DD18D5CBC1805DE5803FE3B9CA5F193FB8359E91FAB0C3BB40309A292EB1CF49685C65C4A3ADF4F11DB0CD2B6B67FBC174BC2E860E8F769FD3565BBFAD1C845E05A0FED9BE167C240D");
     }
     {
         const ad = "Additional data";
@@ -1154,7 +1154,7 @@ test "xchacha20" {
         var out: [m.len]u8 = undefined;
         try XChaCha20Poly1305.decrypt(out[0..], c[0..m.len], c[m.len..].*, ad, nonce, key);
         var buf: [2 * c.len]u8 = undefined;
-        try testing.expectEqualStrings(try std.fmt.bufPrint(&buf, "{X}", .{&c}), "994D2DD32333F48E53650C02C7A2ABB8E018B0836D7175AEC779F52E961780768F815C58F1AA52D211498DB89B9216763F569C9433A6BBFCEFB4D4A49387A4C5207FBB3B5A92B5941294DF30588C6740D39DC16FA1F0E634F7246CF7CDCB978E44347D89381B7A74EB7084F754B90BDE9AAF5A94B8F2A85EFD0B50692AE2D425E234");
+        try testing.expectEqualStrings(try std.mem.print(&buf, "{X}", .{&c}), "994D2DD32333F48E53650C02C7A2ABB8E018B0836D7175AEC779F52E961780768F815C58F1AA52D211498DB89B9216763F569C9433A6BBFCEFB4D4A49387A4C5207FBB3B5A92B5941294DF30588C6740D39DC16FA1F0E634F7246CF7CDCB978E44347D89381B7A74EB7084F754B90BDE9AAF5A94B8F2A85EFD0B50692AE2D425E234");
         try testing.expectEqualSlices(u8, out[0..], m);
         c[0] +%= 1;
         try testing.expectError(error.AuthenticationFailed, XChaCha20Poly1305.decrypt(out[0..], c[0..m.len], c[m.len..].*, ad, nonce, key));

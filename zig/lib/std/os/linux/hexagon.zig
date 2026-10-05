@@ -2,44 +2,66 @@ const builtin = @import("builtin");
 const std = @import("../../std.zig");
 const SYS = std.os.linux.SYS;
 
-pub fn syscall0(number: SYS) u32 {
+pub const syscall_arg_t = u32;
+
+pub fn syscall0(
+    number: SYS,
+) u32 {
     return asm volatile ("trap0(#1)"
         : [ret] "={r0}" (-> u32),
-        : [number] "{r6}" (@intFromEnum(number)),
+        : [number] "{r6}" (@backingInt(number)),
         : .{ .memory = true });
 }
 
-pub fn syscall1(number: SYS, arg1: u32) u32 {
+pub fn syscall1(
+    number: SYS,
+    arg1: syscall_arg_t,
+) u32 {
     return asm volatile ("trap0(#1)"
         : [ret] "={r0}" (-> u32),
-        : [number] "{r6}" (@intFromEnum(number)),
+        : [number] "{r6}" (@backingInt(number)),
           [arg1] "{r0}" (arg1),
         : .{ .memory = true });
 }
 
-pub fn syscall2(number: SYS, arg1: u32, arg2: u32) u32 {
+pub fn syscall2(
+    number: SYS,
+    arg1: syscall_arg_t,
+    arg2: syscall_arg_t,
+) u32 {
     return asm volatile ("trap0(#1)"
         : [ret] "={r0}" (-> u32),
-        : [number] "{r6}" (@intFromEnum(number)),
+        : [number] "{r6}" (@backingInt(number)),
           [arg1] "{r0}" (arg1),
           [arg2] "{r1}" (arg2),
         : .{ .memory = true });
 }
 
-pub fn syscall3(number: SYS, arg1: u32, arg2: u32, arg3: u32) u32 {
+pub fn syscall3(
+    number: SYS,
+    arg1: syscall_arg_t,
+    arg2: syscall_arg_t,
+    arg3: syscall_arg_t,
+) u32 {
     return asm volatile ("trap0(#1)"
         : [ret] "={r0}" (-> u32),
-        : [number] "{r6}" (@intFromEnum(number)),
+        : [number] "{r6}" (@backingInt(number)),
           [arg1] "{r0}" (arg1),
           [arg2] "{r1}" (arg2),
           [arg3] "{r2}" (arg3),
         : .{ .memory = true });
 }
 
-pub fn syscall4(number: SYS, arg1: u32, arg2: u32, arg3: u32, arg4: u32) u32 {
+pub fn syscall4(
+    number: SYS,
+    arg1: syscall_arg_t,
+    arg2: syscall_arg_t,
+    arg3: syscall_arg_t,
+    arg4: syscall_arg_t,
+) u32 {
     return asm volatile ("trap0(#1)"
         : [ret] "={r0}" (-> u32),
-        : [number] "{r6}" (@intFromEnum(number)),
+        : [number] "{r6}" (@backingInt(number)),
           [arg1] "{r0}" (arg1),
           [arg2] "{r1}" (arg2),
           [arg3] "{r2}" (arg3),
@@ -50,7 +72,7 @@ pub fn syscall4(number: SYS, arg1: u32, arg2: u32, arg3: u32, arg4: u32) u32 {
 pub fn syscall5(number: SYS, arg1: u32, arg2: u32, arg3: u32, arg4: u32, arg5: u32) u32 {
     return asm volatile ("trap0(#1)"
         : [ret] "={r0}" (-> u32),
-        : [number] "{r6}" (@intFromEnum(number)),
+        : [number] "{r6}" (@backingInt(number)),
           [arg1] "{r0}" (arg1),
           [arg2] "{r1}" (arg2),
           [arg3] "{r2}" (arg3),
@@ -61,16 +83,16 @@ pub fn syscall5(number: SYS, arg1: u32, arg2: u32, arg3: u32, arg4: u32, arg5: u
 
 pub fn syscall6(
     number: SYS,
-    arg1: u32,
-    arg2: u32,
-    arg3: u32,
-    arg4: u32,
-    arg5: u32,
-    arg6: u32,
+    arg1: syscall_arg_t,
+    arg2: syscall_arg_t,
+    arg3: syscall_arg_t,
+    arg4: syscall_arg_t,
+    arg5: syscall_arg_t,
+    arg6: syscall_arg_t,
 ) u32 {
     return asm volatile ("trap0(#1)"
         : [ret] "={r0}" (-> u32),
-        : [number] "{r6}" (@intFromEnum(number)),
+        : [number] "{r6}" (@backingInt(number)),
           [arg1] "{r0}" (arg1),
           [arg2] "{r1}" (arg2),
           [arg3] "{r2}" (arg3),
@@ -114,7 +136,6 @@ pub fn clone() callconv(.naked) u32 {
         \\ callr r11
         \\
         \\ r6 = #93 // SYS_exit
-        \\ r0 = #0
         \\ trap0(#1)
     );
 }

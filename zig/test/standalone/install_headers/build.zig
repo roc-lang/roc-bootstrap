@@ -12,7 +12,7 @@ pub fn build(b: *std.Build) void {
         .root_module = b.createModule(.{
             .root_source_file = null,
             .target = b.resolveTargetQuery(.{}),
-            .optimize = .Debug,
+            .optimize = .debug,
         }),
     });
     libfoo.root_module.addCSourceFile(.{ .file = empty_c });
@@ -22,7 +22,7 @@ pub fn build(b: *std.Build) void {
         .root_module = b.createModule(.{
             .root_source_file = null,
             .target = b.resolveTargetQuery(.{}),
-            .optimize = .Debug,
+            .optimize = .debug,
             .link_libc = true,
         }),
     });
@@ -68,7 +68,7 @@ pub fn build(b: *std.Build) void {
         .root_module = b.createModule(.{
             .root_source_file = null,
             .target = b.resolveTargetQuery(.{}),
-            .optimize = .Debug,
+            .optimize = .debug,
         }),
     });
     libbar.root_module.addCSourceFile(.{ .file = empty_c });
@@ -93,7 +93,7 @@ pub fn build(b: *std.Build) void {
         .root_module = b.createModule(.{
             .root_source_file = b.path("check_exists.zig"),
             .target = b.resolveTargetQuery(.{}),
-            .optimize = .Debug,
+            .optimize = .debug,
         }),
     });
     const run_check_exists = b.addRunArtifact(check_exists);
@@ -106,7 +106,7 @@ pub fn build(b: *std.Build) void {
         "custom/include/foo/config.h",
         "custom/include/bar.h",
     });
-    run_check_exists.setCwd(.{ .cwd_relative = b.getInstallPath(.prefix, "") });
+    run_check_exists.setCwd(.{ .relative = .{ .base = .install_prefix } });
     run_check_exists.expectExitCode(0);
     run_check_exists.step.dependOn(&install_libfoo.step);
     test_step.dependOn(&run_check_exists.step);

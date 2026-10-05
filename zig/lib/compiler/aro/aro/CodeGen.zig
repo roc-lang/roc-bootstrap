@@ -9,6 +9,7 @@ const Builder = Ir.Builder;
 
 const Builtins = @import("Builtins.zig");
 const Compilation = @import("Compilation.zig");
+const Preprocessor = @import("Preprocessor.zig");
 const StringId = @import("StringInterner.zig").StringId;
 const Tree = @import("Tree.zig");
 const Node = Tree.Node;
@@ -37,6 +38,7 @@ const CodeGen = @This();
 
 tree: *const Tree,
 comp: *Compilation,
+pp: *const Preprocessor,
 builder: Builder,
 wip_switch: *WipSwitch = undefined,
 symbols: std.ArrayList(Symbol) = .empty,
@@ -54,8 +56,9 @@ return_label: Ir.Ref = undefined,
 compound_assign_dummy: ?Ir.Ref = null,
 
 fn fail(c: *CodeGen, comptime fmt: []const u8, args: anytype) error{ FatalError, OutOfMemory } {
-    var sf = std.heap.stackFallback(1024, c.comp.gpa);
-    const allocator = sf.get();
+    var bfa_buf: [1024]u8 = undefined;
+    var bfa: std.heap.BufferFirstAllocator = .init(&bfa_buf, c.comp.gpa);
+    const allocator = bfa.allocator();
     var buf: std.ArrayList(u8) = .empty;
     defer buf.deinit(allocator);
 
@@ -64,7 +67,7 @@ fn fail(c: *CodeGen, comptime fmt: []const u8, args: anytype) error{ FatalError,
     return error.FatalError;
 }
 
-pub fn genIr(tree: *const Tree) Compilation.Error!Ir {
+pub fn genIr(tree: *const Tree, pp: *const Preprocessor) Compilation.Error!Ir {
     const gpa = tree.comp.gpa;
     var c: CodeGen = .{
         .builder = .{
@@ -74,6 +77,7 @@ pub fn genIr(tree: *const Tree) Compilation.Error!Ir {
         },
         .tree = tree,
         .comp = tree.comp,
+        .pp = pp,
     };
     defer c.symbols.deinit(gpa);
     defer c.ret_nodes.deinit(gpa);
@@ -100,6 +104,7 @@ pub fn genIr(tree: *const Tree) Compilation.Error!Ir {
 
             .function => |function| {
                 if (function.body == null) continue;
+                if (function.@"inline") continue;
                 c.genFn(function) catch |err| switch (err) {
                     error.FatalError => return error.FatalError,
                     error.OutOfMemory => return error.OutOfMemory,
@@ -150,12 +155,14 @@ fn genType(c: *CodeGen, qt: QualType) !Interner.Ref {
         },
         .pointer => return .ptr,
         .func => return .func,
+        .block => return c.fail("TODO lower blocks", .{}),
         .complex => return c.fail("TODO lower complex types", .{}),
         .atomic => return c.fail("TODO lower atomic types", .{}),
         .@"enum" => |@"enum"| return c.genType(@"enum".tag.?),
         .int => |int| .{ .int_ty = int.bits(c.comp) },
         .bit_int => |bit_int| .{ .int_ty = bit_int.bits },
         .float => |float| .{ .float_ty = float.bits(c.comp) },
+        .storage_float => |storage_float| .{ .int_ty = storage_float.bits() },
         .array => |array| blk: {
             switch (array.len) {
                 .fixed, .static => |len| {
@@ -173,7 +180,7 @@ fn genType(c: *CodeGen, qt: QualType) !Interner.Ref {
         .nullptr_t => {
             return c.fail("TODO lower nullptr_t", .{});
         },
-        .attributed, .typeof, .typedef => unreachable,
+        .typeof, .typedef => unreachable,
     };
     return c.builder.interner.put(c.builder.gpa, key);
 }
@@ -429,14 +436,7 @@ fn genExpr(c: *CodeGen, node_index: Node.Index) Error!Ir.Ref {
             const old_continue_label = c.continue_label;
             defer c.continue_label = old_continue_label;
 
-            switch (@"for".init) {
-                .decls => |decls| {
-                    for (decls) |decl| try c.genStmt(decl);
-                },
-                .expr => |maybe_init| {
-                    if (maybe_init) |init| _ = try c.genExpr(init);
-                },
-            }
+            if (@"for".init) |init| try c.genStmt(init);
 
             const cond = @"for".cond orelse {
                 const then_label = try c.builder.makeLabel("for.then");
@@ -500,7 +500,12 @@ fn genExpr(c: *CodeGen, node_index: Node.Index) Error!Ir.Ref {
         .computed_goto_stmt,
         .nullptr_literal,
         .asm_stmt,
-        => return c.fail("TODO CodeGen.genStmt {s}\n", .{@tagName(node)}),
+        => return c.fail("TODO CodeGen.genStmt {t}\n", .{node}),
+        .decl_stmt => |decl_stmt| {
+            for (decl_stmt.decls) |decl| {
+                try c.genStmt(decl);
+            }
+        },
         .comma_expr => |bin| {
             _ = try c.genExpr(bin.lhs);
             return c.genExpr(bin.rhs);
@@ -719,7 +724,7 @@ fn genExpr(c: *CodeGen, node_index: Node.Index) Error!Ir.Ref {
             }
 
             try c.builder.startBlock(then_label);
-            if (c.builder.instructions.items(.ty)[@intFromEnum(c.cond_dummy_ref)] == .i1) {
+            if (c.builder.instructions.items(.ty)[@backingInt(c.cond_dummy_ref)] == .i1) {
                 c.cond_dummy_ref = try c.addUn(.zext, c.cond_dummy_ref, cond_qt);
             }
             const then_val = try c.genExpr(conditional.then_expr);
@@ -869,7 +874,15 @@ fn genExpr(c: *CodeGen, node_index: Node.Index) Error!Ir.Ref {
         .sizeof_expr,
         .builtin_va_arg_pack,
         .builtin_va_arg_pack_len,
-        => return c.fail("TODO CodeGen.genExpr {s}\n", .{@tagName(node)}),
+        => return c.fail("TODO CodeGen.genExpr {t}\n", .{node}),
+        .codegen_diagnostic => |diagnostic| {
+            try c.comp.diagnostics.addWithLocation(c.comp, .{
+                .kind = diagnostic.kind,
+                .text = @ptrCast(diagnostic.text),
+                .opt = diagnostic.opt,
+                .location = node_index.loc(c.tree).expand(c.comp),
+            }, c.pp.expansionSlice(diagnostic.tok), true);
+        },
         else => unreachable, // Not an expression.
     }
     return .none;
@@ -895,8 +908,8 @@ fn genLval(c: *CodeGen, node_index: Node.Index) Error!Ir.Ref {
                 }
             }
 
-            const duped_name = try c.builder.arena.allocator().dupeZ(u8, slice);
-            const ref: Ir.Ref = @enumFromInt(c.builder.instructions.len);
+            const duped_name = try c.builder.arena.allocator().dupeSentinel(u8, slice, 0);
+            const ref: Ir.Ref = @fromBackingInt(@intCast(c.builder.instructions.len));
             try c.builder.instructions.append(c.builder.gpa, .{ .tag = .symbol, .data = .{ .label = duped_name }, .ty = .ptr });
             return ref;
         },
@@ -925,7 +938,7 @@ fn genLval(c: *CodeGen, node_index: Node.Index) Error!Ir.Ref {
         .member_access_expr,
         .member_access_ptr_expr,
         .array_access_expr,
-        => return c.fail("TODO CodeGen.genLval {s}\n", .{@tagName(node)}),
+        => return c.fail("TODO CodeGen.genLval {t}\n", .{node}),
         else => unreachable, // Not an lval expression.
     }
 }
@@ -1113,8 +1126,8 @@ fn genCall(c: *CodeGen, call: Node.Call) Error!Ir.Ref {
                     }
                 }
 
-                const duped_name = try c.builder.arena.allocator().dupeZ(u8, slice);
-                const ref: Ir.Ref = @enumFromInt(c.builder.instructions.len);
+                const duped_name = try c.builder.arena.allocator().dupeSentinel(u8, slice, 0);
+                const ref: Ir.Ref = @fromBackingInt(@intCast(c.builder.instructions.len));
                 try c.builder.instructions.append(c.builder.gpa, .{ .tag = .symbol, .data = .{ .label = duped_name }, .ty = .ptr });
                 break :blk ref;
             },
@@ -1182,7 +1195,7 @@ fn genInitializer(c: *CodeGen, ptr: Ir.Ref, dest_ty: QualType, initializer: Node
         .union_init_expr,
         .array_filler_expr,
         .default_init_expr,
-        => return c.fail("TODO CodeGen.genInitializer {s}\n", .{@tagName(node)}),
+        => return c.fail("TODO CodeGen.genInitializer {t}\n", .{node}),
         .string_literal_expr => {
             const val = c.tree.value_map.get(initializer).?;
             const str_ptr = try c.builder.addConstant(val.ref(), .ptr);

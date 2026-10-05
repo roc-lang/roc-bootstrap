@@ -8,17 +8,9 @@ const std = @import("std");
 const builtin = @import("builtin");
 const assert = std.debug.assert;
 
-const c_malloc = @cImport(
-    @cInclude("malloc.h"), // for reallocarray
-);
-
-const c_stdlib = @cImport(
-    @cInclude("stdlib.h"), // for atexit
-);
-
-const c_string = @cImport(
-    @cInclude("string.h"), // for strlcpy
-);
+const c_malloc = @import("malloc.h"); // for reallocarray
+const c_stdlib = @import("stdlib.h"); // for atexit
+const c_string = @import("string.h"); // for strlcpy
 
 // Version of glibc this test is being built to run against
 const glibc_ver = builtin.os.versionRange().gnuLibCVersion().?;
@@ -73,8 +65,8 @@ fn checkGetAuxVal() !void {
 }
 
 fn checkGetAuxVal_v2_16() !void {
-    const base = std.c.getauxval(std.elf.AT_BASE);
-    const pgsz = std.c.getauxval(std.elf.AT_PAGESZ);
+    const base = std.c.getauxval(std.elf.AT.BASE);
+    const pgsz = std.c.getauxval(std.elf.AT.PAGESZ);
 
     assert(base != 0);
     assert(pgsz != 0);

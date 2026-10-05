@@ -8,7 +8,7 @@ pub fn panic(message: []const u8, stack_trace: ?*std.builtin.StackTrace, _: ?usi
     std.process.exit(1);
 }
 pub fn main() !void {
-    var buffer = [2]u8{ 1, 2 } ** 5;
+    var buffer: [10]u8 = .{ 1, 2, 1, 2, 1, 2, 1, 2, 1, 2 };
     var len: usize = 5;
     _ = &len;
     @memmove(buffer[0..len], buffer[len .. len + 4]);
@@ -16,4 +16,4 @@ pub fn main() !void {
 }
 // run
 // backend=selfhosted,llvm
-// target=x86_64-linux,aarch64-linux
+// target=x86_64-linux,aarch64-linux,wasm32-wasi

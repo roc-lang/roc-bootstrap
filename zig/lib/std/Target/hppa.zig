@@ -18,34 +18,34 @@ pub const featureSetHasAny = CpuFeature.FeatureSetFns(Feature).featureSetHasAny;
 pub const featureSetHasAll = CpuFeature.FeatureSetFns(Feature).featureSetHasAll;
 
 pub const all_features = blk: {
-    const len = @typeInfo(Feature).@"enum".fields.len;
+    const len = @typeInfo(Feature).@"enum".field_names.len;
     std.debug.assert(len <= CpuFeature.Set.needed_bit_count);
     var result: [len]CpuFeature = undefined;
-    result[@intFromEnum(Feature.@"64bit")] = .{
+    result[@backingInt(Feature.@"64bit")] = .{
         .llvm_name = null,
         .description = "Enable 64-bit PA-RISC 2.0",
         .dependencies = featureSet(&[_]Feature{
             .v2_0,
         }),
     };
-    result[@intFromEnum(Feature.max_1)] = .{
+    result[@backingInt(Feature.max_1)] = .{
         .llvm_name = null,
         .description = "Enable MAX-1 multimedia acceleration extensions",
         .dependencies = featureSet(&[_]Feature{}),
     };
-    result[@intFromEnum(Feature.max_2)] = .{
+    result[@backingInt(Feature.max_2)] = .{
         .llvm_name = null,
         .description = "Enable MAX-2 multimedia acceleration extensions",
         .dependencies = featureSet(&[_]Feature{
             .max_1,
         }),
     };
-    result[@intFromEnum(Feature.v1_1)] = .{
+    result[@backingInt(Feature.v1_1)] = .{
         .llvm_name = null,
         .description = "Enable ISA v1.1",
         .dependencies = featureSet(&[_]Feature{}),
     };
-    result[@intFromEnum(Feature.v2_0)] = .{
+    result[@backingInt(Feature.v2_0)] = .{
         .llvm_name = null,
         .description = "Enable ISA v2.0",
         .dependencies = featureSet(&[_]Feature{
@@ -56,7 +56,7 @@ pub const all_features = blk: {
     const ti = @typeInfo(Feature);
     for (&result, 0..) |*elem, i| {
         elem.index = i;
-        elem.name = ti.@"enum".fields[i].name;
+        elem.name = ti.@"enum".field_names[i];
     }
     break :blk result;
 };

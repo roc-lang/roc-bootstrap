@@ -548,14 +548,17 @@ LinkerScript::computeInputSections(const InputSectionDescription *cmd,
           ctx.arg.sortSection, SortSectionPolicy::None);
     };
 
+    bool enableNonContiguousRegions = ctx.arg.enableNonContiguousRegions;
     for (const SectionPattern &pat : cmd->sectionPatterns) {
       size_t sizeBeforeCurrPat = ret.size();
 
       for (size_t i = 0, e = sections.size(); i != e; ++i) {
-        // Skip if the section is dead or has been matched by a previous pattern
-        // in this input section description.
+        // Skip if the section is dead, has been matched by a previous input
+        // section description with non-contiguous regions disabled, or has been
+        // matched by a previous pattern in this input section description.
         InputSectionBase *sec = sections[i];
-        if (!sec->isLive() || seen.contains(i))
+        if (!sec->isLive() || (!enableNonContiguousRegions && sec->parent) ||
+            seen.contains(i))
           continue;
 
         // For --emit-relocs we have to ignore entries like
@@ -576,9 +579,7 @@ LinkerScript::computeInputSections(const InputSectionDescription *cmd,
           continue;
 
         if (sec->parent) {
-          // Skip if not allowing multiple matches.
-          if (!ctx.arg.enableNonContiguousRegions)
-            continue;
+          assert(ctx.arg.enableNonContiguousRegions);
 
           // Disallow spilling into /DISCARD/; special handling would be needed
           // for this in address assignment, and the semantics are nebulous.
@@ -1234,6 +1235,9 @@ bool LinkerScript::assignOffsets(OutputSection *sec) {
   if (sec->firstInOverlay)
     state->overlaySize = 0;
 
+  bool synthesizeAlign =
+      ctx.arg.relocatable && ctx.arg.relax && (sec->flags & SHF_EXECINSTR) &&
+      (ctx.arg.emachine == EM_LOONGARCH || ctx.arg.emachine == EM_RISCV);
   // We visited SectionsCommands from processSectionCommands to
   // layout sections. Now, we visit SectionsCommands again to fix
   // section offsets.
@@ -1264,7 +1268,10 @@ bool LinkerScript::assignOffsets(OutputSection *sec) {
       if (isa<PotentialSpillSection>(isec))
         continue;
       const uint64_t pos = dot;
-      dot = alignToPowerOf2(dot, isec->addralign);
+      // If synthesized ALIGN may be needed, call maybeSynthesizeAlign and
+      // disable the default handling if the return value is true.
+      if (!(synthesizeAlign && ctx.target->synthesizeAlign(dot, isec)))
+        dot = alignToPowerOf2(dot, isec->addralign);
       isec->outSecOff = dot - sec->addr;
       dot += isec->getSize();
 
@@ -1279,6 +1286,12 @@ bool LinkerScript::assignOffsets(OutputSection *sec) {
   // boundary to protect the last page.
   if (ctx.in.relroPadding && sec == ctx.in.relroPadding->getParent())
     expandOutputSection(alignToPowerOf2(dot, ctx.arg.commonPageSize) - dot);
+
+  if (synthesizeAlign) {
+    const uint64_t pos = dot;
+    ctx.target->synthesizeAlign(dot, nullptr);
+    expandOutputSection(dot - pos);
+  }
 
   // Non-SHF_ALLOC sections do not affect the addresses of other OutputSections
   // as they are not part of the process image.

@@ -61,7 +61,7 @@ const hashes = [_]Hash{
         .init_default = true,
     },
     Hash{
-        .ty = hash.crc.Crc32,
+        .ty = hash.Crc32,
         .name = "crc32",
     },
     Hash{
@@ -93,13 +93,13 @@ const hashes = [_]Hash{
         .ty = hash.SipHash64(1, 3),
         .name = "siphash64",
         .has_crypto_api = true,
-        .init_u8s = &[_]u8{0} ** 16,
+        .init_u8s = &@as([16]u8, @splat(0)),
     },
     Hash{
         .ty = hash.SipHash128(1, 3),
         .name = "siphash128",
         .has_crypto_api = true,
-        .init_u8s = &[_]u8{0} ** 16,
+        .init_u8s = &@as([16]u8, @splat(0)),
     },
 };
 
@@ -355,7 +355,7 @@ fn usage() void {
 }
 
 fn mode(comptime x: comptime_int) comptime_int {
-    return if (builtin.mode == .Debug) x / 64 else x;
+    return if (builtin.mode == .debug) x / 64 else x;
 }
 
 pub fn main(init: std.process.Init) !void {

@@ -6,9 +6,9 @@ const BuiltinFn = std.zig.BuiltinFn;
 
 ast: *const Ast,
 transformations: *std.array_list.Managed(Transformation),
-unreferenced_globals: std.StringArrayHashMapUnmanaged(Ast.Node.Index),
-in_scope_names: std.StringArrayHashMapUnmanaged(u32),
-replace_names: std.StringArrayHashMapUnmanaged(u32),
+unreferenced_globals: std.array_hash_map.String(Ast.Node.Index),
+in_scope_names: std.array_hash_map.String(u32),
+replace_names: std.array_hash_map.String(u32),
 gpa: std.mem.Allocator,
 arena: std.mem.Allocator,
 
@@ -44,7 +44,7 @@ pub const Transformation = union(enum) {
         imported_string: []const u8,
         /// Identifier names that must be renamed in the inlined code or else
         /// will cause ambiguous reference errors.
-        in_scope_names: std.StringArrayHashMapUnmanaged(void),
+        in_scope_names: std.array_hash_map.String(void),
     };
 };
 
@@ -63,9 +63,9 @@ pub fn findTransformations(
         .transformations = transformations,
         .gpa = transformations.allocator,
         .arena = arena,
-        .unreferenced_globals = .{},
-        .in_scope_names = .{},
-        .replace_names = .{},
+        .unreferenced_globals = .empty,
+        .in_scope_names = .empty,
+        .replace_names = .empty,
     };
     defer {
         walk.unreferenced_globals.deinit(walk.gpa);
@@ -223,12 +223,8 @@ fn walkExpression(w: *Walk, node: Ast.Node.Index) Error!void {
             return walkBlock(w, node, statements);
         },
 
-        .@"errdefer" => {
-            const expr = ast.nodeData(node).opt_token_and_node[1];
-            return walkExpression(w, expr);
-        },
-
         .@"defer",
+        .@"errdefer",
         .@"comptime",
         .@"nosuspend",
         .@"suspend",
@@ -252,7 +248,6 @@ fn walkExpression(w: *Walk, node: Ast.Node.Index) Error!void {
         .add_wrap,
         .add_sat,
         .array_cat,
-        .array_mult,
         .assign,
         .assign_bit_and,
         .assign_bit_or,
@@ -607,7 +602,7 @@ fn walkBlock(
                 {
                     try w.transformations.append(.{ .delete_var_decl = .{
                         .var_decl_node = stmt,
-                        .references = .{},
+                        .references = .empty,
                     } });
                     const name_tok = var_decl.ast.mut_token + 1;
                     const name_bytes = ast.tokenSlice(name_tok);
@@ -728,7 +723,7 @@ fn walkBuiltinCall(
                 try w.transformations.append(.{ .inline_imported_file = .{
                     .builtin_call_node = call_node,
                     .imported_string = imported_string,
-                    .in_scope_names = try std.StringArrayHashMapUnmanaged(void).init(
+                    .in_scope_names = try std.array_hash_map.String(void).init(
                         w.arena,
                         w.in_scope_names.keys(),
                         &.{},

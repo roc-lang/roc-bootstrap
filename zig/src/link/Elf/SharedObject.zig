@@ -7,7 +7,7 @@ const elf = std.elf;
 const log = std.log.scoped(.elf);
 const mem = std.mem;
 const Path = std.Build.Cache.Path;
-const Stat = std.Build.Cache.File.Stat;
+const Stat = std.Build.Cache.Manifest.Stat;
 const Allocator = mem.Allocator;
 
 const Elf = @import("../Elf.zig");
@@ -30,6 +30,8 @@ needed: bool,
 alive: bool,
 
 output_symtab_ctx: Elf.SymtabCtx,
+
+fallback_soname: []const u8,
 
 pub fn deinit(so: *SharedObject, gpa: Allocator) void {
     gpa.free(so.path.sub_path);
@@ -238,11 +240,11 @@ pub fn parse(
             const verdef = mem.bytesAsValue(elf.Verdef, verdefs[offset..][0..@sizeOf(elf.Verdef)]);
             if (verdef.ndx == .UNSPECIFIED) return error.VerDefSymbolTooLarge;
 
-            if (verstrings.items.len <= @intFromEnum(verdef.ndx))
-                try verstrings.appendNTimes(gpa, 0, @intFromEnum(verdef.ndx) + 1 - verstrings.items.len);
+            if (verstrings.items.len <= @backingInt(verdef.ndx))
+                try verstrings.appendNTimes(gpa, 0, @backingInt(verdef.ndx) + 1 - verstrings.items.len);
 
             const aux = mem.bytesAsValue(elf.Verdaux, verdefs[offset + verdef.aux ..][0..@sizeOf(elf.Verdaux)]);
-            verstrings.items[@intFromEnum(verdef.ndx)] = aux.name;
+            verstrings.items[@backingInt(verdef.ndx)] = aux.name;
 
             if (verdef.next == 0) break;
             offset += verdef.next;
@@ -314,15 +316,21 @@ pub fn parse(
     header.sections = &.{};
     errdefer gpa.free(sections);
 
+    try strtab.shrinkToLen(gpa);
+    try nonlocal_esyms.shrinkToLen(gpa);
+    try nonlocal_versyms.shrinkToLen(gpa);
+    try nonlocal_symbols.shrinkToLen(gpa);
+    try verstrings.shrinkToLen(gpa);
+
     return .{
         .sections = sections,
         .stat = header.stat,
         .soname_index = header.soname_index,
-        .strtab = try strtab.toOwnedSlice(gpa),
-        .symtab = try nonlocal_esyms.toOwnedSlice(gpa),
-        .versyms = try nonlocal_versyms.toOwnedSlice(gpa),
-        .symbols = try nonlocal_symbols.toOwnedSlice(gpa),
-        .verstrings = try verstrings.toOwnedSlice(gpa),
+        .strtab = strtab.toOwnedSliceAssert(),
+        .symtab = nonlocal_esyms.toOwnedSliceAssert(),
+        .versyms = nonlocal_versyms.toOwnedSliceAssert(),
+        .symbols = nonlocal_symbols.toOwnedSliceAssert(),
+        .verstrings = verstrings.toOwnedSliceAssert(),
     };
 }
 
@@ -374,7 +382,7 @@ pub fn markImportExports(self: *SharedObject, elf_file: *Elf) void {
         const ref = self.resolveSymbol(@intCast(i), elf_file);
         const ref_sym = elf_file.symbol(ref) orelse continue;
         const ref_file = ref_sym.file(elf_file).?;
-        const vis: elf.STV = @enumFromInt(@as(u3, @truncate(ref_sym.elfSym(elf_file).st_other)));
+        const vis: elf.STV = @fromBackingInt(@intCast(@as(u3, @truncate(ref_sym.elfSym(elf_file).st_other))));
         if (ref_file != .shared_object and vis != .HIDDEN) ref_sym.flags.@"export" = true;
     }
 }
@@ -421,7 +429,7 @@ pub fn asFile(self: *SharedObject) File {
 }
 
 pub fn soname(self: *SharedObject) []const u8 {
-    return self.parsed.soname() orelse self.path.basename();
+    return self.parsed.soname() orelse self.fallback_soname;
 }
 
 pub fn initSymbolAliases(self: *SharedObject, elf_file: *Elf) !void {
@@ -492,10 +500,10 @@ pub fn addSymbolAssumeCapacity(self: *SharedObject) Symbol.Index {
 
 pub fn addSymbolExtraAssumeCapacity(self: *SharedObject, extra: Symbol.Extra) u32 {
     const index: u32 = @intCast(self.symbols_extra.items.len);
-    const fields = @typeInfo(Symbol.Extra).@"struct".fields;
-    inline for (fields) |field| {
-        self.symbols_extra.appendAssumeCapacity(switch (field.type) {
-            u32 => @field(extra, field.name),
+    const info = @typeInfo(Symbol.Extra).@"struct";
+    inline for (info.field_names, info.field_types) |field_name, field_type| {
+        self.symbols_extra.appendAssumeCapacity(switch (field_type) {
+            u32 => @field(extra, field_name),
             else => @compileError("bad field type"),
         });
     }
@@ -503,11 +511,11 @@ pub fn addSymbolExtraAssumeCapacity(self: *SharedObject, extra: Symbol.Extra) u3
 }
 
 pub fn symbolExtra(self: *SharedObject, index: u32) Symbol.Extra {
-    const fields = @typeInfo(Symbol.Extra).@"struct".fields;
+    const info = @typeInfo(Symbol.Extra).@"struct";
     var i: usize = index;
     var result: Symbol.Extra = undefined;
-    inline for (fields) |field| {
-        @field(result, field.name) = switch (field.type) {
+    inline for (info.field_names, info.field_types) |field_name, field_type| {
+        @field(result, field_name) = switch (field_type) {
             u32 => self.symbols_extra.items[i],
             else => @compileError("bad field type"),
         };
@@ -517,10 +525,10 @@ pub fn symbolExtra(self: *SharedObject, index: u32) Symbol.Extra {
 }
 
 pub fn setSymbolExtra(self: *SharedObject, index: u32, extra: Symbol.Extra) void {
-    const fields = @typeInfo(Symbol.Extra).@"struct".fields;
-    inline for (fields, 0..) |field, i| {
-        self.symbols_extra.items[index + i] = switch (field.type) {
-            u32 => @field(extra, field.name),
+    const info = @typeInfo(Symbol.Extra).@"struct";
+    inline for (info.field_names, info.field_types, 0..) |field_name, field_type, i| {
+        self.symbols_extra.items[index + i] = switch (field_type) {
+            u32 => @field(extra, field_name),
             else => @compileError("bad field type"),
         };
     }

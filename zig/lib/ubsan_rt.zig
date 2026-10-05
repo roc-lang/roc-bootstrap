@@ -492,10 +492,10 @@ const NonNullReturnData = extern struct {
     attribute_loc: SourceLocation,
 };
 
-fn nonNullReturnAbort(data: *const NonNullReturnData) callconv(.c) noreturn {
-    nonNullReturn(data);
+fn nonNullReturnAbort(data: *const NonNullReturnData, where: *const SourceLocation) callconv(.c) noreturn {
+    nonNullReturn(data, where);
 }
-fn nonNullReturn(_: *const NonNullReturnData) callconv(.c) noreturn {
+fn nonNullReturn(_: *const NonNullReturnData, _: *const SourceLocation) callconv(.c) noreturn {
     panic(@returnAddress(), "null pointer returned from function declared to never return null", .{});
 }
 
@@ -647,6 +647,7 @@ fn exportHandlerWithAbort(
 }
 
 const can_build_ubsan = switch (builtin.zig_backend) {
+    .stage2_loongarch,
     .stage2_powerpc,
     .stage2_riscv64,
     => false,

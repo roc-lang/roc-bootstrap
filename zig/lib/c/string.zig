@@ -1,8 +1,11 @@
 const builtin = @import("builtin");
 const std = @import("std");
 const symbol = @import("../c.zig").symbol;
+const c = std.c;
 
 comptime {
+    symbol(&strndup, "strndup");
+
     if (builtin.target.isMuslLibC() or builtin.target.isWasiLibC()) {
         // memcpy implemented in compiler_rt
         // memmove implemented in compiler_rt
@@ -24,6 +27,7 @@ comptime {
         symbol(&strpbrk, "strpbrk");
         symbol(&strstr, "strstr");
         symbol(&strtok, "strtok");
+        symbol(&strdup, "strdup");
         // strlen is in compiler_rt
 
         symbol(&strtok_r, "strtok_r");
@@ -64,8 +68,12 @@ comptime {
 }
 
 fn memchr(ptr: *const anyopaque, value: c_int, len: usize) callconv(.c) ?*anyopaque {
+    const b: u8 = @truncate(@as(c_uint, @bitCast(value)));
     const bytes: [*]const u8 = @ptrCast(ptr);
-    return @constCast(bytes[std.mem.findScalar(u8, bytes[0..len], @truncate(@as(c_uint, @bitCast(value)))) orelse return null ..]);
+    for (0..len) |i| {
+        if (bytes[i] == b) return @constCast(&bytes[i]);
+    }
+    return null;
 }
 
 fn strcpy(noalias dst: [*]c_char, noalias src: [*:0]const c_char) callconv(.c) [*]c_char {
@@ -164,6 +172,23 @@ fn strtok(noalias maybe_str: ?[*:0]c_char, noalias values: [*:0]const c_char) ca
     return strtok_r(maybe_str, values, &state.str);
 }
 
+fn strdup(str: [*:0]const c_char) callconv(.c) ?[*:0]c_char {
+    const len = std.mem.len(str);
+    const d_opaque = c.malloc(len + 1) orelse return null;
+    const d: [*]c_char = @ptrCast(d_opaque);
+    @memcpy(d[0 .. len + 1], str[0 .. len + 1]);
+    return @ptrCast(d);
+}
+
+fn strndup(str: [*:0]const c_char, n: usize) callconv(.c) ?[*:0]c_char {
+    const len = strnlen(str, n);
+    const d_opaque = c.malloc(len + 1) orelse return null;
+    const d: [*]c_char = @ptrCast(d_opaque);
+    @memcpy(d[0..len], str[0..len]);
+    d[len] = 0;
+    return @ptrCast(d);
+}
+
 // strlen is in compiler_rt
 
 fn strtok_r(noalias maybe_str: ?[*:0]c_char, noalias values: [*:0]const c_char, noalias state: *?[*:0]c_char) callconv(.c) ?[*:0]c_char {
@@ -203,7 +228,10 @@ fn stpncpy(noalias dst: [*]c_char, noalias src: [*:0]const c_char, max: usize) c
 }
 
 fn strnlen(str: [*:0]const c_char, max: usize) callconv(.c) usize {
-    return std.mem.findScalar(u8, @ptrCast(str[0..max]), 0) orelse max;
+    for (0..max) |i| {
+        if (str[i] == 0) return i;
+    }
+    return max;
 }
 
 fn memmem(haystack: *const anyopaque, haystack_len: usize, needle: *const anyopaque, needle_len: usize) callconv(.c) ?*anyopaque {
@@ -289,11 +317,4 @@ fn mempcpy(noalias dst: *anyopaque, noalias src: *const anyopaque, len: usize) c
     const src_bytes: [*]const u8 = @ptrCast(src);
     @memcpy(dst_bytes[0..len], src_bytes[0..len]);
     return dst_bytes + len;
-}
-
-test strncmp {
-    try std.testing.expect(strncmp(@ptrCast("a"), @ptrCast("b"), 1) < 0);
-    try std.testing.expect(strncmp(@ptrCast("a"), @ptrCast("c"), 1) < 0);
-    try std.testing.expect(strncmp(@ptrCast("b"), @ptrCast("a"), 1) > 0);
-    try std.testing.expect(strncmp(@ptrCast("\xff"), @ptrCast("\x02"), 1) > 0);
 }

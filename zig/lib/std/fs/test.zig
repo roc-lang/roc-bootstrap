@@ -135,7 +135,7 @@ const TestContext = struct {
         const allocator = self.arena.allocator();
         const transformed_path = try self.transform_fn(allocator, self.io, self.dir, relative_path);
         if (native_os == .windows) {
-            const transformed_sep_path = try allocator.dupeZ(u8, transformed_path);
+            const transformed_sep_path = try allocator.dupeSentinel(u8, transformed_path, 0);
             std.mem.replaceScalar(u8, transformed_sep_path, switch (self.path_sep) {
                 '/' => '\\',
                 '\\' => '/',
@@ -153,7 +153,7 @@ const TestContext = struct {
     pub fn toCanonicalPathSep(self: *TestContext, path: [:0]const u8) ![:0]const u8 {
         if (native_os == .windows) {
             const allocator = self.arena.allocator();
-            const transformed_sep_path = try allocator.dupeZ(u8, path);
+            const transformed_sep_path = try allocator.dupeSentinel(u8, path, 0);
             std.mem.replaceScalar(u8, transformed_sep_path, '/', '\\');
             return transformed_sep_path;
         }
@@ -529,7 +529,7 @@ test "Dir.Iterator many entries" {
     var i: usize = 0;
     var buf: [4]u8 = undefined; // Enough to store "1024".
     while (i < num) : (i += 1) {
-        const name = try std.fmt.bufPrint(&buf, "{}", .{i});
+        const name = try std.mem.print(&buf, "{}", .{i});
         const file = try tmp_dir.dir.createFile(io, name, .{});
         file.close(io);
     }
@@ -551,7 +551,7 @@ test "Dir.Iterator many entries" {
 
     i = 0;
     while (i < num) : (i += 1) {
-        const name = try std.fmt.bufPrint(&buf, "{}", .{i});
+        const name = try std.mem.print(&buf, "{}", .{i});
         try expect(contains(&entries, .{ .name = name, .kind = .file, .inode = 0 }));
     }
 }
@@ -758,6 +758,43 @@ test "readFileAlloc" {
     );
 }
 
+test "file operations with follow_symlinks=false" {
+    const io = testing.io;
+
+    var tmp_dir = tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const contents = "this is a test.\nthis is a test.\nthis is a test.\nthis is a test.\n";
+    try tmp_dir.dir.writeFile(io, .{
+        .sub_path = "test_file",
+        .data = contents,
+    });
+
+    // Without lock
+    {
+        var file = try tmp_dir.dir.openFile(io, "test_file", .{ .follow_symlinks = false });
+        defer file.close(io);
+
+        var file_reader = file.reader(io, &.{});
+        const actual_contents = try file_reader.interface.allocRemaining(testing.allocator, .unlimited);
+        defer testing.allocator.free(actual_contents);
+
+        try std.testing.expectEqualSlices(u8, contents, actual_contents);
+    }
+
+    // With lock
+    {
+        var file = try tmp_dir.dir.openFile(io, "test_file", .{ .follow_symlinks = false, .lock = .exclusive });
+        defer file.close(io);
+
+        var file_reader = file.reader(io, &.{});
+        const actual_contents = try file_reader.interface.allocRemaining(testing.allocator, .unlimited);
+        defer testing.allocator.free(actual_contents);
+
+        try std.testing.expectEqualSlices(u8, contents, actual_contents);
+    }
+}
+
 test "Dir.statFile" {
     try testWithAllSupportedPathTypes(struct {
         fn impl(ctx: *TestContext) !void {
@@ -902,6 +939,8 @@ test "createDirPathOpen parent dirs do not exist" {
 }
 
 test "deleteDir" {
+    if (builtin.target.os.tag == .windows) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/35686
+
     try testWithAllSupportedPathTypes(struct {
         fn impl(ctx: *TestContext) !void {
             const io = ctx.io;
@@ -1070,6 +1109,49 @@ test "Dir.rename file <-> dir" {
             try ctx.dir.createDir(io, test_dir_path, .default_dir);
             try expectError(error.IsDir, ctx.dir.rename(test_file_path, ctx.dir, test_dir_path, io));
             try expectError(error.NotDir, ctx.dir.rename(test_dir_path, ctx.dir, test_file_path, io));
+        }
+    }.impl);
+}
+
+test "Dir.renamePreserve onto existing" {
+    if (native_os == .windows) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/35359
+
+    try testWithAllSupportedPathTypes(struct {
+        fn impl(ctx: *TestContext) !void {
+            const io = ctx.io;
+
+            const test_file_path = try ctx.transformPath("test_file");
+            const target_file_path = try ctx.transformPath("target_file");
+            const test_dir_path = try ctx.transformPath("test_dir");
+            const target_dir_path = try ctx.transformPath("target_dir");
+
+            try ctx.dir.writeFile(io, .{ .sub_path = test_file_path, .data = "" });
+            try ctx.dir.writeFile(io, .{ .sub_path = target_file_path, .data = "" });
+            try ctx.dir.createDir(io, test_dir_path, .default_dir);
+            try ctx.dir.createDir(io, target_dir_path, .default_dir);
+
+            // file -> file
+            try expectError(error.PathAlreadyExists, ctx.dir.renamePreserve(test_file_path, ctx.dir, target_file_path, io));
+            // file -> dir
+            try expectError(error.PathAlreadyExists, ctx.dir.renamePreserve(test_file_path, ctx.dir, target_dir_path, io));
+
+            // TODO: fix dir renaming on other systems, see https://codeberg.org/ziglang/zig/issues/35340
+            if (native_os != .windows and native_os != .linux and !native_os.isDarwin()) {
+                return;
+            }
+
+            // dir -> file
+            try expectError(error.PathAlreadyExists, ctx.dir.renamePreserve(test_dir_path, ctx.dir, target_file_path, io));
+            // dir -> dir
+            try expectError(error.PathAlreadyExists, ctx.dir.renamePreserve(test_dir_path, ctx.dir, target_dir_path, io));
+
+            // dir -> non-empty dir
+            {
+                const target_dir = try ctx.dir.openDir(io, target_dir_path, .{});
+                defer target_dir.close(io);
+                try target_dir.writeFile(io, .{ .sub_path = "test_file", .data = "" });
+            }
+            try expectError(error.PathAlreadyExists, ctx.dir.renamePreserve(test_dir_path, ctx.dir, target_dir_path, io));
         }
     }.impl);
 }
@@ -1449,11 +1531,15 @@ test "max file name component lengths" {
     if (native_os == .windows) {
         // U+FFFF is the character with the largest code point that is encoded as a single
         // WTF-16 code unit, so Windows allows for NAME_MAX of them.
-        const maxed_windows_filename1 = ("\u{FFFF}".*) ** windows.NAME_MAX;
+        const codepoint1 = "\u{FFFF}".*;
+        const buf1: [windows.NAME_MAX][codepoint1.len]u8 = @splat(codepoint1);
+        const maxed_windows_filename1: []const u8 = @ptrCast(&buf1);
         // This is also a code point that is encoded as one WTF-16 code unit, but
         // three WTF-8 bytes, so it exercises the limits of both WTF-16 and WTF-8 encodings.
-        const maxed_windows_filename2 = ("€".*) ** windows.NAME_MAX;
-        try testFilenameLimits(io, tmp.dir, &maxed_windows_filename1, &maxed_windows_filename2);
+        const codepoint2 = "€".*;
+        const buf2: [windows.NAME_MAX][codepoint2.len]u8 = @splat(codepoint2);
+        const maxed_windows_filename2: []const u8 = @ptrCast(&buf2);
+        try testFilenameLimits(io, tmp.dir, maxed_windows_filename1, maxed_windows_filename2);
     } else if (native_os == .wasi) {
         // On WASI, the maxed filename depends on the host OS, so in order for this test to
         // work on any host, we need to use a length that will work for all platforms
@@ -2121,7 +2207,7 @@ test "'.' and '..' in absolute functions" {
 }
 
 test "chmod" {
-    if (native_os == .windows or native_os == .wasi) return;
+    if (native_os == .windows or native_os == .wasi) return error.SkipZigTest;
 
     const io = testing.io;
 
@@ -2144,8 +2230,7 @@ test "chmod" {
 }
 
 test "change ownership" {
-    if (native_os == .windows or native_os == .wasi)
-        return error.SkipZigTest;
+    if (native_os == .windows or native_os == .wasi) return error.SkipZigTest;
 
     const io = testing.io;
 
@@ -2324,13 +2409,19 @@ test "seekBy" {
     try tmp_dir.dir.writeFile(io, .{ .sub_path = "blah.txt", .data = "let's test seekBy" });
     const f = try tmp_dir.dir.openFile(io, "blah.txt", .{ .mode = .read_only });
     defer f.close(io);
-    var reader = f.readerStreaming(io, &.{});
+    var buf: [10]u8 = undefined;
+    var reader = f.readerStreaming(io, &buf);
+    // Seek without any buffered data
+    try reader.seekBy(2);
+
+    // Seek when the buffered data is sufficient to satisfy the seek amount
+    try reader.interface.fill(2);
     try reader.seekBy(2);
 
     var buffer: [20]u8 = undefined;
     const n = try reader.interface.readSliceShort(&buffer);
-    try expectEqual(15, n);
-    try expectEqualStrings("t's test seekBy", buffer[0..15]);
+    try expectEqual(13, n);
+    try expectEqualStrings("s test seekBy", buffer[0..n]);
 }
 
 test "seekTo flushes buffered data" {

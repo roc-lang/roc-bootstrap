@@ -100,7 +100,7 @@ pub const E = enum(u16) {
 pub fn errno(r: usize) E {
     const signed_r: isize = @bitCast(r);
     const int = if (signed_r > -4096 and signed_r < 0) -signed_r else 0;
-    return @enumFromInt(int);
+    return @fromBackingInt(@intCast(int));
 }
 
 // The max bytes that can be in the errstr buff
@@ -299,7 +299,7 @@ pub fn openat(dirfd: i32, path: [*:0]const u8, flags: u32, _: mode_t) usize {
     const dir_path = std.mem.span(@as([*:0]u8, @ptrCast(&dir_path_buf)));
     const total_path = std.fs.path.join(alloc, &.{ dir_path, std.mem.span(path) }) catch unreachable; // the allocation shouldn't fail because it should not exceed max_path_bytes
     fba.reset();
-    const total_path_z = alloc.dupeZ(u8, total_path) catch unreachable; // should not exceed max_path_bytes + 1
+    const total_path_z = alloc.dupeSentinel(u8, total_path, 0) catch unreachable; // should not exceed max_path_bytes + 1
     return open(total_path_z.ptr, flags);
 }
 

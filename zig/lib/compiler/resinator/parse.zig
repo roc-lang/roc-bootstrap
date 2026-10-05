@@ -137,9 +137,9 @@ pub const Parser = struct {
     fn parseOptionalStatements(self: *Self, resource: ResourceType) ![]*Node {
         var optional_statements: std.ArrayList(*Node) = .empty;
 
-        const num_statement_types = @typeInfo(rc.OptionalStatements).@"enum".fields.len;
-        var statement_type_has_duplicates = [_]bool{false} ** num_statement_types;
-        var last_statement_per_type = [_]?*Node{null} ** num_statement_types;
+        const num_statement_types = @typeInfo(rc.OptionalStatements).@"enum".field_names.len;
+        var statement_type_has_duplicates: [num_statement_types]bool = @splat(false);
+        var last_statement_per_type: [num_statement_types]?*Node = @splat(null);
 
         while (true) {
             const lookahead_token = try self.lookaheadToken(.normal);
@@ -151,7 +151,7 @@ pub const Parser = struct {
             };
             try self.nextToken(.normal);
 
-            const type_i = @intFromEnum(optional_statement_type);
+            const type_i = @backingInt(optional_statement_type);
             if (last_statement_per_type[type_i] != null) {
                 statement_type_has_duplicates[type_i] = true;
             }
@@ -300,13 +300,13 @@ pub const Parser = struct {
                         const slice = statement_identifier.slice(self.lexer.buffer);
                         const optional_statement_type = rc.OptionalStatements.map.get(slice) orelse
                             rc.OptionalStatements.dialog_map.get(slice).?;
-                        break :type_i @intFromEnum(optional_statement_type);
+                        break :type_i @backingInt(optional_statement_type);
                     },
                     .font_statement => {
-                        break :type_i @intFromEnum(rc.OptionalStatements.font);
+                        break :type_i @backingInt(rc.OptionalStatements.font);
                     },
                     .language_statement => {
-                        break :type_i @intFromEnum(rc.OptionalStatements.language);
+                        break :type_i @backingInt(rc.OptionalStatements.language);
                     },
                     else => unreachable,
                 }
@@ -1277,7 +1277,7 @@ pub const Parser = struct {
             },
             else => unreachable,
         }
-        @compileError("unreachable");
+        comptime unreachable;
     }
 
     pub const OptionalParamParser = struct {

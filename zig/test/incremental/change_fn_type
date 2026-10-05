@@ -1,11 +1,8 @@
-#target=x86_64-linux-selfhosted
-//#target=x86_64-windows-selfhosted
-#target=x86_64-linux-cbe
-#target=x86_64-windows-cbe
-#target=x86_64-linux-llvm
-//#target=wasm32-wasi-selfhosted
-#update=initial version
-#file=main.zig
+#exe {
+-Mroot=main.zig
+#}
+
+#write main.zig {
 pub fn main() !void {
     try foo(123);
 }
@@ -15,10 +12,13 @@ fn foo(x: u8) !void {
 }
 const std = @import("std");
 const io = std.Io.Threaded.global_single_threaded.io();
-#expect_stdout="123\n"
+#}
+#update
+#check stdout {
+123
+#}
 
-#update=change function type
-#file=main.zig
+#write main.zig {
 pub fn main() !void {
     try foo(123);
 }
@@ -28,10 +28,14 @@ fn foo(x: i64) !void {
 }
 const std = @import("std");
 const io = std.Io.Threaded.global_single_threaded.io();
-#expect_stdout="123\n"
+#}
+#update {
+change function type#}
+#check stdout {
+123
+#}
 
-#update=change function argument
-#file=main.zig
+#write main.zig {
 pub fn main() !void {
     try foo(-42);
 }
@@ -41,4 +45,9 @@ fn foo(x: i64) !void {
 }
 const std = @import("std");
 const io = std.Io.Threaded.global_single_threaded.io();
-#expect_stdout="-42\n"
+#}
+#update {
+change function argument#}
+#check stdout {
+-42
+#}

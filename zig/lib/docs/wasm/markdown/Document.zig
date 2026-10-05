@@ -108,7 +108,7 @@ pub const Node = struct {
             // In Debug and ReleaseSafe builds, there may be hidden extra fields
             // included for safety checks. Without such safety checks enabled,
             // we always want this union to be 8 bytes.
-            if (builtin.mode != .Debug and builtin.mode != .ReleaseSafe) {
+            if (builtin.mode != .debug and builtin.mode != .safe) {
                 assert(@sizeOf(Data) == 8);
             }
         }
@@ -126,8 +126,8 @@ pub const Node = struct {
 
         pub fn asNumber(start: ListStart) ?u30 {
             if (start == .unordered) return null;
-            assert(@intFromEnum(start) <= 999_999_999);
-            return @intFromEnum(start);
+            assert(@backingInt(start) <= 999_999_999);
+            return @backingInt(start);
         }
     };
 
@@ -170,11 +170,11 @@ pub fn ExtraData(comptime T: type) type {
 }
 
 pub fn extraData(doc: Document, comptime T: type, index: ExtraIndex) ExtraData(T) {
-    const fields = @typeInfo(T).@"struct".fields;
-    var i: usize = @intFromEnum(index);
+    const info = @typeInfo(T).@"struct";
+    var i: usize = @backingInt(index);
     var result: T = undefined;
-    inline for (fields) |field| {
-        @field(result, field.name) = switch (field.type) {
+    inline for (info.field_names, info.field_types) |field_name, field_type| {
+        @field(result, field_name) = switch (field_type) {
             u32 => doc.extra[i],
             else => @compileError("bad field type"),
         };
@@ -189,6 +189,6 @@ pub fn extraChildren(doc: Document, index: ExtraIndex) []const Node.Index {
 }
 
 pub fn string(doc: Document, index: StringIndex) [:0]const u8 {
-    const start = @intFromEnum(index);
+    const start = @backingInt(index);
     return std.mem.span(@as([*:0]u8, @ptrCast(doc.string_bytes[start..].ptr)));
 }

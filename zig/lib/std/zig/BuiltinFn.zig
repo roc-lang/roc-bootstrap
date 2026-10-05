@@ -20,9 +20,6 @@ pub const Tag = enum {
     bit_reverse,
     offset_of,
     call,
-    c_define,
-    c_import,
-    c_include,
     clz,
     cmpxchg_strong,
     cmpxchg_weak,
@@ -30,11 +27,11 @@ pub const Tag = enum {
     compile_log,
     const_cast,
     ctz,
-    c_undef,
     c_va_arg,
     c_va_copy,
     c_va_end,
     c_va_start,
+    div_ceil,
     div_exact,
     div_floor,
     div_trunc,
@@ -59,6 +56,8 @@ pub const Tag = enum {
     import,
     in_comptime,
     int_cast,
+    backing_int,
+    from_backing_int,
     enum_from_int,
     error_from_int,
     float_from_int,
@@ -118,6 +117,7 @@ pub const Tag = enum {
     Struct,
     Union,
     Enum,
+    SpirvType,
     type_info,
     type_name,
     TypeOf,
@@ -307,27 +307,6 @@ pub const list = list: {
             },
         },
         .{
-            "@cDefine",
-            .{
-                .tag = .c_define,
-                .param_count = 2,
-            },
-        },
-        .{
-            "@cImport",
-            .{
-                .tag = .c_import,
-                .param_count = 1,
-            },
-        },
-        .{
-            "@cInclude",
-            .{
-                .tag = .c_include,
-                .param_count = 1,
-            },
-        },
-        .{
             "@clz",
             .{
                 .tag = .clz,
@@ -377,13 +356,6 @@ pub const list = list: {
             },
         },
         .{
-            "@cUndef",
-            .{
-                .tag = .c_undef,
-                .param_count = 1,
-            },
-        },
-        .{
             "@cVaArg",
             .{
                 .tag = .c_va_arg,
@@ -426,6 +398,13 @@ pub const list = list: {
             "@divFloor",
             .{
                 .tag = .div_floor,
+                .param_count = 2,
+            },
+        },
+        .{
+            "@divCeil",
+            .{
+                .tag = .div_ceil,
                 .param_count = 2,
             },
         },
@@ -584,6 +563,20 @@ pub const list = list: {
             "@intCast",
             .{
                 .tag = .int_cast,
+                .param_count = 1,
+            },
+        },
+        .{
+            "@backingInt",
+            .{
+                .tag = .backing_int,
+                .param_count = 1,
+            },
+        },
+        .{
+            "@fromBackingInt",
+            .{
+                .tag = .from_backing_int,
                 .param_count = 1,
             },
         },
@@ -1001,6 +994,13 @@ pub const list = list: {
             .{
                 .tag = .Enum,
                 .param_count = 4,
+            },
+        },
+        .{
+            "@SpirvType",
+            .{
+                .tag = .SpirvType,
+                .param_count = 1,
             },
         },
         .{

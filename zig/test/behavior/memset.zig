@@ -30,6 +30,28 @@ fn testMemsetArray() !void {
     }
 }
 
+test "@memset preserves array sentinel" {
+    if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+
+    try testMemsetArraySentinel();
+    try comptime testMemsetArraySentinel();
+}
+
+fn testMemsetArraySentinel() !void {
+    var value: u32 = 42;
+    _ = &value;
+    var array: [3:0]u32 = .{ 1, 2, 3 };
+
+    @memset(&array, value);
+
+    try expect(array[0] == value);
+    try expect(array[1] == value);
+    try expect(array[2] == value);
+    try expect(array[3] == 0);
+}
+
 test "@memset on slices" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest;
@@ -80,7 +102,6 @@ test "memset with 1-byte struct element" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_wasm) return error.SkipZigTest;
 
     const S = struct { x: bool };
     var buf: [5]S = undefined;
@@ -93,7 +114,6 @@ test "memset with 1-byte array element" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_wasm) return error.SkipZigTest;
 
     const A = [1]bool;
     var buf: [5]A = undefined;
@@ -111,7 +131,7 @@ test "memset with large array element, runtime known" {
 
     const A = [128]u64;
     var buf: [5]A = undefined;
-    var runtime_known_element = [_]u64{0} ** 128;
+    var runtime_known_element: A = @splat(0);
     _ = &runtime_known_element;
     @memset(&buf, runtime_known_element);
     for (buf[0]) |elem| try expect(elem == 0);
@@ -129,7 +149,7 @@ test "memset with large array element, comptime known" {
 
     const A = [128]u64;
     var buf: [5]A = undefined;
-    const comptime_known_element = [_]u64{0} ** 128;
+    const comptime_known_element: A = @splat(0);
     @memset(&buf, comptime_known_element);
     for (buf[0]) |elem| try expect(elem == 0);
     for (buf[1]) |elem| try expect(elem == 0);
@@ -181,17 +201,39 @@ test "@memset with zero-length array" {
 }
 
 test "@memset a global array" {
+    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+
     const S = struct {
-        var buf: [1]u32 = .{123};
+        var array_u8: [1]u8 = .{1};
+        const slice_u8: []u8 = &array_u8;
+        var array_u32: [1]u32 = .{10};
+        const slice_u32: []u32 = &array_u32;
     };
-    try expect(S.buf[0] == 123);
-    @memset(&S.buf, 456);
-    try expect(S.buf[0] == 456);
-    @memset(&S.buf, S.buf[0] + 333);
-    try expect(S.buf[0] == 789);
+
+    try expect(S.array_u8[0] == 1);
+    @memset(&S.array_u8, 2);
+    try expect(S.array_u8[0] == 2);
+    @memset(&S.array_u8, S.array_u8[0] + 1);
+    try expect(S.array_u8[0] == 3);
+    @memset(S.slice_u8, 4);
+    try expect(S.array_u8[0] == 4);
+    @memset(S.slice_u8, S.array_u8[0] + 1);
+    try expect(S.array_u8[0] == 5);
+
+    try expect(S.array_u32[0] == 10);
+    @memset(&S.array_u32, 20);
+    try expect(S.array_u32[0] == 20);
+    @memset(&S.array_u32, S.array_u32[0] + 10);
+    try expect(S.array_u32[0] == 30);
+    @memset(S.slice_u32, 40);
+    try expect(S.array_u32[0] == 40);
+    @memset(S.slice_u32, S.array_u32[0] + 10);
+    try expect(S.array_u32[0] == 50);
 }
 
 test "@memset array of booleans" {
+    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+
     const S = struct {
         var x: bool = false;
         var y: [1]bool = undefined;

@@ -3,6 +3,7 @@ const native_os = builtin.os.tag;
 
 const std = @import("std.zig");
 const Io = std.Io;
+const Dir = std.Io.Dir;
 const File = std.Io.File;
 const fs = std.fs;
 const mem = std.mem;
@@ -57,9 +58,14 @@ pub const Init = struct {
 };
 
 pub const CurrentPathError = error{
+    /// Buffer is too small to contain the current path.
     NameTooLong,
     /// Not possible on Windows. Always returned on WASI.
     CurrentDirUnlinked,
+    /// The current path cannot be retrieved due to a limitation of the
+    /// underlying libc or syscall implementation. Retrying with a larger
+    /// buffer will not succeed.
+    PathExceedsLimit,
 } || Io.Cancelable || Io.UnexpectedError;
 
 /// On Windows, the result is encoded as [WTF-8](https://wtf-8.codeberg.page/).
@@ -69,11 +75,10 @@ pub fn currentPath(io: Io, buffer: []u8) CurrentPathError!usize {
     return io.vtable.processCurrentPath(io.userdata, buffer);
 }
 
-pub const CurrentPathAllocError = Allocator.Error || error{
-    /// Not possible on Windows. Always returned on WASI.
-    CurrentDirUnlinked,
-} || Io.Cancelable || Io.UnexpectedError;
+pub const CurrentPathAllocError = Allocator.Error || CurrentPathError;
 
+/// Shortcut for calling `currentPath` with a buffer of size `max_path_bytes`.
+///
 /// On Windows, the result is encoded as [WTF-8](https://wtf-8.codeberg.page/).
 /// On other platforms, the result is an opaque sequence of bytes with no
 /// particular encoding.
@@ -81,11 +86,8 @@ pub const CurrentPathAllocError = Allocator.Error || error{
 /// Caller owns returned memory.
 pub fn currentPathAlloc(io: Io, allocator: Allocator) CurrentPathAllocError![:0]u8 {
     var buffer: [max_path_bytes]u8 = undefined;
-    const n = currentPath(io, &buffer) catch |err| switch (err) {
-        error.NameTooLong => unreachable,
-        else => |e| return e,
-    };
-    return allocator.dupeZ(u8, buffer[0..n]);
+    const n = try currentPath(io, &buffer);
+    return allocator.dupeSentinel(u8, buffer[0..n], 0);
 }
 
 test currentPathAlloc {
@@ -99,7 +101,7 @@ pub const UserInfo = struct {
 };
 
 /// POSIX function which gets a uid from username.
-pub fn getUserInfo(name: []const u8) !UserInfo {
+pub fn getUserInfo(io: Io, name: []const u8) !UserInfo {
     return switch (native_os) {
         .linux,
         .driverkit,
@@ -115,7 +117,7 @@ pub fn getUserInfo(name: []const u8) !UserInfo {
         .haiku,
         .illumos,
         .serenity,
-        => posixGetUserInfo(name),
+        => posixGetUserInfo(io, name),
         else => @compileError("Unsupported OS"),
     };
 }
@@ -126,11 +128,11 @@ pub fn posixGetUserInfo(io: Io, name: []const u8) !UserInfo {
     const file = try Io.Dir.openFileAbsolute(io, "/etc/passwd", .{});
     defer file.close(io);
     var buffer: [4096]u8 = undefined;
-    var file_reader = file.reader(&buffer);
+    var file_reader = file.reader(io, &buffer);
     return posixGetUserInfoPasswdStream(name, &file_reader.interface) catch |err| switch (err) {
         error.ReadFailed => return file_reader.err.?,
         error.EndOfStream => return error.UserNotFound,
-        error.CorruptPasswordFile => return error.CorruptPasswordFile,
+        error.CorruptPasswordFile => |e| return e,
     };
 }
 
@@ -280,41 +282,62 @@ pub const ReplaceError = error{
 } || Allocator.Error || Io.Dir.PathNameError || Io.Cancelable || Io.UnexpectedError;
 
 pub const ReplaceOptions = struct {
+    exe: Exe = .detect,
     argv: []const []const u8,
-    expand_arg0: ArgExpansion = .no_expand,
+
+    /// Set to change the current working directory when spawning the child process.
+    cwd: Child.Cwd = .inherit,
     /// Replaces the environment when provided. The PATH value from here is
     /// never used to resolve `argv[0]`.
     environ_map: ?*const Environ.Map = null,
+    expand_arg0: ArgExpansion = .no_expand,
+
+    inherit_dirs: []const Dir = &.{},
+    inherit_files: []const File = &.{},
+
+    /// Start child process in suspended state.
+    /// For Posix systems it's started as if SIGSTOP was sent.
+    start_suspended: bool = false,
+
+    pub const Exe = union(enum) {
+        /// `argv[0]` is the name of the program to execute. If it is not already a
+        /// file path (i.e. it contains '/'), it is resolved into a file path based on
+        /// PATH from the parent environment.
+        detect,
+        /// `argv[0]` is the name of the program to execute, resolved into a file path
+        /// based on PATH from the parent environment.
+        search,
+        /// `argv[0]` is the file path of the program to execute, relative to `Dir` payload.
+        /// It is *always* treated as a file path, even if it does not contain '/'.
+        path: Dir,
+        /// `File` payload is the program to execute.
+        file: File,
+        /// `path` is the file path of the program to execute, relative to `dir`.
+        /// It is *always* treated as a file path, even if it does not contain '/'.
+        explicit: struct { dir: Dir, path: []const u8 },
+    };
 };
 
 /// Replaces the current process image with the executed process. If this
 /// function succeeds, it does not return.
-///
-/// `argv[0]` is the name of the process to replace the current one with. If it
-/// is not already a file path (i.e. it contains '/'), it is resolved into a
-/// file path based on PATH from the parent environment.
 ///
 /// It is illegal to call this function in a fork() child.
 pub fn replace(io: Io, options: ReplaceOptions) ReplaceError {
     return io.vtable.processReplace(io.userdata, options);
 }
 
-/// Replaces the current process image with the executed process. If this
-/// function succeeds, it does not return.
-///
-/// `argv[0]` is the file path of the process to replace the current one with,
-/// relative to `dir`. It is *always* treated as a file path, even if it does
-/// not contain '/'.
-///
-/// It is illegal to call this function in a fork() child.
-pub fn replacePath(io: Io, dir: Io.Dir, options: ReplaceOptions) ReplaceError {
-    return io.vtable.processReplacePath(io.userdata, dir, options);
-}
-
 pub const ArgExpansion = enum { expand, no_expand };
 
 /// File name extensions supported natively by `CreateProcess()` on Windows.
-pub const WindowsExtension = enum { bat, cmd, com, exe };
+pub const WindowsExtension = enum {
+    bat,
+    cmd,
+    com,
+    exe,
+
+    /// Length of the longest supported extension (in ASCII characters)
+    pub const max_len = 3;
+};
 
 pub const SpawnError = error{
     /// The operating system does not support creating child processes.
@@ -358,6 +381,7 @@ pub const SpawnError = error{
 } || Io.File.OpenError || Io.Dir.PathNameError || Io.Cancelable || Io.UnexpectedError;
 
 pub const SpawnOptions = struct {
+    exe: ReplaceOptions.Exe = .detect,
     argv: []const []const u8,
 
     /// Set to change the current working directory when spawning the child process.
@@ -375,11 +399,13 @@ pub const SpawnOptions = struct {
     ///
     /// The child's progress tree will be grafted into the parent's progress tree,
     /// by substituting this node with the child's root node.
-    progress_node: std.Progress.Node = std.Progress.Node.none,
+    progress_node: std.Progress.Node = .none,
 
     stdin: StdIo = .inherit,
     stdout: StdIo = .inherit,
     stderr: StdIo = .inherit,
+    inherit_dirs: []const Dir = &.{},
+    inherit_files: []const File = &.{},
 
     /// Set to true to obtain rusage information for the child process.
     /// Depending on the target platform and implementation status, the
@@ -401,8 +427,6 @@ pub const SpawnOptions = struct {
     start_suspended: bool = false,
     /// Windows-only. Sets the CREATE_NO_WINDOW flag in CreateProcess.
     create_no_window: bool = false,
-    /// Darwin-only. Disable ASLR for the child process.
-    disable_aslr: bool = false,
 
     /// Behavior of the child process's standard input, output, and error streams.
     pub const StdIo = union(enum) {
@@ -435,20 +459,8 @@ pub const SpawnOptions = struct {
 };
 
 /// Creates a child process.
-///
-/// `argv[0]` is the name of the program to execute. If it is not already a
-/// file path (i.e. it contains '/'), it is resolved into a file path based on
-/// PATH from the parent environment.
 pub fn spawn(io: Io, options: SpawnOptions) SpawnError!Child {
     return io.vtable.processSpawn(io.userdata, options);
-}
-
-/// Creates a child process.
-///
-/// `argv[0]` is the file path of the program to execute, relative to `dir`. It
-/// is *always* treated as a file path, even if it does not contain '/'.
-pub fn spawnPath(io: Io, dir: Io.Dir, options: SpawnOptions) SpawnError!Child {
-    return io.vtable.processSpawnPath(io.userdata, dir, options);
 }
 
 pub const RunError = error{
@@ -456,6 +468,7 @@ pub const RunError = error{
 } || SpawnError || Io.File.MultiReader.UnendingError || Io.Timeout.Error;
 
 pub const RunOptions = struct {
+    exe: ReplaceOptions.Exe = .detect,
     argv: []const []const u8,
     stderr_limit: Io.Limit = .unlimited,
     stdout_limit: Io.Limit = .unlimited,
@@ -480,8 +493,6 @@ pub const RunOptions = struct {
     progress_node: std.Progress.Node = std.Progress.Node.none,
     /// Windows-only. Sets the CREATE_NO_WINDOW flag in CreateProcess.
     create_no_window: bool = true,
-    /// Darwin-only. Disable ASLR for the child process.
-    disable_aslr: bool = false,
     timeout: Io.Timeout = .none,
 };
 
@@ -495,13 +506,13 @@ pub const RunResult = struct {
 /// If it succeeds, the caller owns result.stdout and result.stderr memory.
 pub fn run(gpa: Allocator, io: Io, options: RunOptions) RunError!RunResult {
     var child = try spawn(io, .{
+        .exe = options.exe,
         .argv = options.argv,
         .cwd = options.cwd,
         .environ_map = options.environ_map,
         .expand_arg0 = options.expand_arg0,
         .progress_node = options.progress_node,
         .create_no_window = options.create_no_window,
-        .disable_aslr = options.disable_aslr,
 
         .stdin = .ignore,
         .stdout = .pipe,
@@ -635,7 +646,7 @@ pub fn totalSystemMemory() TotalSystemMemoryError!u64 {
 /// leaks can be accurate. In release builds, this calls `exit` with code zero,
 /// and does not return.
 pub fn cleanExit(io: Io) void {
-    if (builtin.mode == .Debug) return;
+    if (builtin.mode == .debug) return;
     _ = io.lockStderr(&.{}, .no_color) catch {};
     exit(0);
 }
@@ -734,7 +745,7 @@ pub fn executablePathAlloc(io: Io, allocator: Allocator) ExecutablePathAllocErro
         error.NameTooLong => unreachable,
         else => |e| return e,
     };
-    return allocator.dupeZ(u8, buffer[0..n]);
+    return allocator.dupeSentinel(u8, buffer[0..n], 0);
 }
 
 pub const ExecutablePathError = ExecutablePathBaseError || error{NameTooLong};
@@ -784,7 +795,7 @@ pub fn executableDirPathAlloc(io: Io, allocator: Allocator) ExecutablePathAllocE
 
 pub const OpenExecutableError = File.OpenError || ExecutablePathError || File.LockError;
 
-pub fn openExecutable(io: Io, flags: File.OpenFlags) OpenExecutableError!File {
+pub fn openExecutable(io: Io, flags: Dir.OpenFileOptions) OpenExecutableError!File {
     return io.vtable.processExecutableOpen(io.userdata, flags);
 }
 
@@ -800,7 +811,7 @@ pub fn abort() noreturn {
     // even when linking libc on Windows we use our own abort implementation.
     // See https://github.com/ziglang/zig/issues/2071 for more details.
     if (native_os == .windows) {
-        if (builtin.mode == .Debug and windows.peb().BeingDebugged.toBool()) {
+        if (builtin.mode == .debug and windows.peb().BeingDebugged.toBool()) {
             @breakpoint();
         }
         windows.ntdll.RtlExitUserProcess(3);
@@ -845,7 +856,7 @@ pub fn abort() noreturn {
         exit(127); // Pid 1 might not be signalled in some containers.
     }
     switch (native_os) {
-        .uefi, .wasi, .emscripten, .cuda, .amdhsa => @trap(),
+        .uefi, .wasi, .emscripten, .cuda, .amdhsa, .other, .freestanding => @trap(),
         else => posix.system.abort(),
     }
 }
@@ -866,10 +877,10 @@ pub fn exit(status: u8) noreturn {
             // exit() is only available if exitBootServices() has not been called yet.
             // This call to exit should not fail, so we catch-ignore errors.
             if (uefi.system_table.boot_services) |bs| {
-                bs.exit(uefi.handle, @enumFromInt(status), null) catch {};
+                bs.exit(uefi.handle, @fromBackingInt(@intCast(status)), null) catch {};
             }
             // If we can't exit, reboot the system instead.
-            uefi.system_table.runtime_services.resetSystem(.cold, @enumFromInt(status), null);
+            uefi.system_table.runtime_services.resetSystem(.cold, @fromBackingInt(@intCast(status)), null);
         },
         else => posix.system.exit(status),
     }
@@ -1111,4 +1122,11 @@ test lockMemoryAll {
 test protectMemory {
     protectMemory(&test_page, .{}) catch return error.SkipZigTest;
     protectMemory(&test_page, .{ .read = true, .write = true }) catch return error.SkipZigTest;
+}
+
+test {
+    _ = Child;
+    _ = Args;
+    _ = Environ;
+    _ = Preopens;
 }

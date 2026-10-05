@@ -67,7 +67,6 @@ test "alternative constraints" {
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_llvm and builtin.cpu.arch.isLoongArch()) return error.SkipZigTest; // https://github.com/llvm/llvm-project/issues/159200
 
     if (builtin.zig_backend == .stage2_c and builtin.os.tag == .windows) return error.SkipZigTest; // MSVC doesn't support inline assembly
 
@@ -83,7 +82,6 @@ test "sized integer/float in asm input" {
     if (builtin.zig_backend == .stage2_wasm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
 
     if (builtin.zig_backend == .stage2_c and builtin.os.tag == .windows) return error.SkipZigTest; // MSVC doesn't support inline assembly
@@ -211,48 +209,9 @@ test "packed output types (x86_64)" {
     }
 }
 
-test "extern output types (x86_64)" {
-    if (builtin.target.cpu.arch != .x86_64) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_c and builtin.os.tag == .windows) return error.SkipZigTest; // MSVC doesn't support inline assembly
-    if (builtin.zig_backend == .stage2_llvm) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/31531
-
-    const S = extern struct { x: u32 };
-    {
-        const s: S = asm volatile ("mov $123, %[ret]"
-            : [ret] "=r" (-> S),
-        );
-        try expect(s.x == 123);
-    }
-    {
-        var s: S = undefined;
-        asm volatile ("mov $123, %[ret]"
-            : [ret] "=r" (s),
-        );
-        try expect(s.x == 123);
-    }
-
-    const U = extern union { x: u32 };
-    {
-        const u: U = asm volatile ("mov $123, %[ret]"
-            : [ret] "=r" (-> U),
-        );
-        try expect(u.x == 123);
-    }
-    {
-        var u: U = undefined;
-        asm volatile ("mov $123, %[ret]"
-            : [ret] "=r" (u),
-        );
-        try expect(u.x == 123);
-    }
-}
-
-test "riscv abi register aliases as clobbers" {
+test "abi register aliases as clobbers (RISC-V)" {
     if (!builtin.target.cpu.arch.isRISCV()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_c and builtin.os.tag == .windows) return error.SkipZigTest;
-
-    if (!comptime builtin.cpu.arch.isRISCV()) return error.SkipZigTest;
 
     // Verify that ABI alias names are accepted as clobbers for RISC-V.
     asm volatile ("" ::: .{ .ra = true, .sp = true, .gp = true, .tp = true });

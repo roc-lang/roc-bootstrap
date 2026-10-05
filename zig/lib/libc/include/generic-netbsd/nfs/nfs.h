@@ -1,4 +1,4 @@
-/*	$NetBSD: nfs.h,v 1.80 2021/12/05 07:44:53 msaitoh Exp $	*/
+/*	$NetBSD: nfs.h,v 1.81.2.1 2026/06/27 09:46:05 martin Exp $	*/
 /*
  * Copyright (c) 1989, 1993, 1995
  *	The Regents of the University of California.  All rights reserved.
@@ -44,6 +44,8 @@
 #include <sys/rbtree.h>
 #endif
 
+#include <nfs/rpcv2.h>
+
 /*
  * Tunable constants for nfs
  */
@@ -69,8 +71,8 @@
 #define	NFS_TRYLATERDELMAX (1*60)	/* Maximum try later delay (sec) */
 #define	NFS_TRYLATERDELMUL 2		/* Exponential backoff multiplier */
 
-#define NFS_CWNDSCALE   256             
-#define NFS_MAXCWND     (NFS_CWNDSCALE * 32)    
+#define NFS_CWNDSCALE   256
+#define NFS_MAXCWND     (NFS_CWNDSCALE * 32)
 
 /*
  * These can be overridden through <machine/param.h>, included via
@@ -449,6 +451,8 @@ struct nfssvc_sock {
 	int		ns_sflags;		/* b: */
 	int		ns_cc;			/* b: */
 	int		ns_reclen;		/* b: */
+	int		ns_frag_count;		/* b: */
+	int		ns_streamlen;		/* b: */
 	int		ns_numuids;
 	u_int32_t	ns_sref;		/* g: */
 	SIMPLEQ_HEAD(, nfsrv_descript) ns_sendq; /* s: send reply list */

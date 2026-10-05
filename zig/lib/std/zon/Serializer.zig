@@ -64,6 +64,7 @@ pub const ValueOptions = struct {
     emit_codepoint_literals: EmitCodepointLiterals = .never,
     emit_strings_as_containers: bool = false,
     emit_default_optional_fields: bool = true,
+    escape_non_ascii: bool = false,
 };
 
 /// Determines when to emit Unicode code point literals as opposed to integer literals.
@@ -122,10 +123,10 @@ pub fn valueMaxDepth(self: *Serializer, val: anytype, options: ValueOptions, dep
 
 /// Serialize a value, similar to `serializeArbitraryDepth`.
 pub fn valueArbitraryDepth(self: *Serializer, val: anytype, options: ValueOptions) Error!void {
-    comptime assert(canSerializeType(@TypeOf(val)));
+    comptime assertCanSerializeType(@TypeOf(val));
     switch (@typeInfo(@TypeOf(val))) {
         .int, .comptime_int => if (options.emit_codepoint_literals.emitAsCodepoint(val)) |c| {
-            self.codePoint(c) catch |err| switch (err) {
+            self.codePoint(c, .{ .escape_non_ascii = options.escape_non_ascii }) catch |err| switch (err) {
                 error.InvalidCodepoint => unreachable, // Already validated
                 else => |e| return e,
             };
@@ -146,7 +147,7 @@ pub fn valueArbitraryDepth(self: *Serializer, val: anytype, options: ValueOption
                 (pointer.sentinel() == null or pointer.sentinel() == 0) and
                 !options.emit_strings_as_containers)
             {
-                return try self.string(val);
+                return try self.string(val, .{ .escape_non_ascii = options.escape_non_ascii });
             }
 
             // Serialize as either a tuple or as the child type
@@ -165,7 +166,7 @@ pub fn valueArbitraryDepth(self: *Serializer, val: anytype, options: ValueOption
         },
         .@"struct" => |@"struct"| if (@"struct".is_tuple) {
             var container = try self.beginTuple(
-                .{ .whitespace_style = .{ .fields = @"struct".fields.len } },
+                .{ .whitespace_style = .{ .fields = @"struct".field_names.len } },
             );
             inline for (val) |field_value| {
                 try container.fieldArbitraryDepth(field_value, options);
@@ -173,15 +174,20 @@ pub fn valueArbitraryDepth(self: *Serializer, val: anytype, options: ValueOption
             try container.end();
         } else {
             // Decide which fields to emit
-            const fields, const skipped: [@"struct".fields.len]bool = if (options.emit_default_optional_fields) b: {
-                break :b .{ @"struct".fields.len, @splat(false) };
+            const fields, const skipped: [@"struct".field_names.len]bool = if (options.emit_default_optional_fields) b: {
+                break :b .{ @"struct".field_names.len, @splat(false) };
             } else b: {
-                var fields = @"struct".fields.len;
-                var skipped: [@"struct".fields.len]bool = @splat(false);
-                inline for (@"struct".fields, &skipped) |field_info, *skip| {
-                    if (field_info.default_value_ptr) |ptr| {
-                        const default: *const field_info.type = @ptrCast(@alignCast(ptr));
-                        const field_value = @field(val, field_info.name);
+                var fields = @"struct".field_names.len;
+                var skipped: [@"struct".field_names.len]bool = @splat(false);
+                inline for (
+                    @"struct".field_names,
+                    @"struct".field_types,
+                    @"struct".field_attrs,
+                    &skipped,
+                ) |field_name, field_type, field_attrs, *skip| {
+                    if (field_attrs.default_value_ptr) |ptr| {
+                        const default: *const field_type = @ptrCast(@alignCast(ptr));
+                        const field_value = @field(val, field_name);
                         if (std.meta.eql(field_value, default.*)) {
                             skip.* = true;
                             fields -= 1;
@@ -195,11 +201,11 @@ pub fn valueArbitraryDepth(self: *Serializer, val: anytype, options: ValueOption
             var container = try self.beginStruct(
                 .{ .whitespace_style = .{ .fields = fields } },
             );
-            inline for (@"struct".fields, skipped) |field_info, skip| {
+            inline for (@"struct".field_names, skipped) |field_name, skip| {
                 if (!skip) {
                     try container.fieldArbitraryDepth(
-                        field_info.name,
-                        @field(val, field_info.name),
+                        field_name,
+                        @field(val, field_name),
                         options,
                     );
                 }
@@ -280,12 +286,25 @@ pub fn ident(self: *Serializer, name: []const u8) Error!void {
 }
 
 pub const CodePointError = Error || error{InvalidCodepoint};
+/// Options for formatting code points.
+pub const CodePointOptions = struct {
+    escape_non_ascii: bool = false,
+};
 
 /// Serialize `val` as a Unicode codepoint.
 ///
 /// Returns `error.InvalidCodepoint` if `val` is not a valid Unicode codepoint.
-pub fn codePoint(self: *Serializer, val: u21) CodePointError!void {
-    try self.writer.print("'{f}'", .{std.zig.fmtChar(val)});
+pub fn codePoint(
+    self: *Serializer,
+    val: u21,
+    options: CodePointOptions,
+) CodePointError!void {
+    try self.writer.writeByte('\'');
+    try self.writeCodepoint(val, .{
+        .escape_non_ascii = options.escape_non_ascii,
+        .quote_style = .single,
+    });
+    try self.writer.writeByte('\'');
 }
 
 /// Like `value`, but always serializes `val` as a tuple.
@@ -321,7 +340,7 @@ pub fn tupleArbitraryDepth(
 }
 
 fn tupleImpl(self: *Serializer, val: anytype, options: ValueOptions) Error!void {
-    comptime assert(canSerializeType(@TypeOf(val)));
+    comptime assertCanSerializeType(@TypeOf(val));
     switch (@typeInfo(@TypeOf(val))) {
         .@"struct" => {
             var container = try self.beginTuple(.{ .whitespace_style = .{ .fields = val.len } });
@@ -341,9 +360,150 @@ fn tupleImpl(self: *Serializer, val: anytype, options: ValueOptions) Error!void 
     }
 }
 
+/// Options for writing a Unicode codepoint.
+const WriteCodepointOptions = struct {
+    escape_non_ascii: bool = false,
+    /// If single quote style then single quotes are escaped, otherwise double quotes are escaped.
+    quote_style: enum { single, double } = .single,
+};
+
+/// Write a Unicode codepoint to the writer using the given options.
+///
+/// Returns `error.InvalidCodepoint` if `codepoint` is not a valid Unicode codepoint.
+fn writeCodepoint(
+    self: *Serializer,
+    codepoint: u21,
+    options: WriteCodepointOptions,
+) CodePointError!void {
+    switch (codepoint) {
+        // Printable ASCII
+        ' ', '!', '#'...'&', '('...'[', ']'...'~' => try self.writer.writeByte(@intCast(codepoint)),
+        // Unprintable ASCII
+        0x00...0x08, 0x0B, 0x0C, 0x0E...0x1F, 0x7F => try self.writer.print("\\x{x:0>2}", .{codepoint}),
+        // ASCII with special escapes
+        '\n' => try self.writer.writeAll("\\n"),
+        '\r' => try self.writer.writeAll("\\r"),
+        '\t' => try self.writer.writeAll("\\t"),
+        '\\' => try self.writer.writeAll("\\\\"),
+        // Quotes need escaping if they conflict with the in-use quote character
+        '\'' => if (options.quote_style == .single) try self.writer.writeAll("\\'") else try self.writer.writeByte('\''),
+        '\"' => if (options.quote_style == .double) try self.writer.writeAll("\\\"") else try self.writer.writeByte('"'),
+
+        // Surrogates can only be written with an escape
+        0xD800...0xDFFF => try self.writer.print("\\u{{{x}}}", .{codepoint}),
+        // Other valid codepoints
+        0x80...0xD7FF, 0xE000...0x10FFFF => if (options.escape_non_ascii) {
+            try self.writer.print("\\u{{{x}}}", .{codepoint});
+        } else {
+            var buf: [7]u8 = undefined;
+            const len = std.unicode.utf8Encode(codepoint, &buf) catch unreachable;
+            try self.writer.writeAll(buf[0..len]);
+        },
+        // Invalid codepoints
+        0x110000...std.math.maxInt(u21) => return error.InvalidCodepoint,
+    }
+}
+
+pub const StringOptions = struct {
+    escape_non_ascii: bool = false,
+};
+
 /// Like `value`, but always serializes `val` as a string.
-pub fn string(self: *Serializer, val: []const u8) Error!void {
-    try self.writer.print("\"{f}\"", .{std.zig.fmtString(val)});
+pub fn string(self: *Serializer, val: []const u8, options: StringOptions) Writer.Error!void {
+    if (!options.escape_non_ascii) {
+        return try self.writer.print("{q}", .{val});
+    }
+
+    try self.writer.writeByte('"');
+    var i: usize = 0;
+    while (i < val.len) {
+        const byte = val[i];
+
+        if (byte >= 0x80) {
+            if (std.unicode.utf8ByteSequenceLength(byte)) |ulen| utf8: {
+                if (val[i..].len < ulen) {
+                    // Truncated UTF-8 sequence
+                    break :utf8;
+                }
+                const codepoint = std.unicode.utf8Decode(val[i..][0..ulen]) catch break :utf8;
+                self.writeCodepoint(codepoint, .{
+                    .escape_non_ascii = true,
+                    .quote_style = .double,
+                }) catch unreachable;
+                i += ulen;
+                continue;
+            } else |err| switch (err) {
+                error.Utf8InvalidStartByte => {},
+            }
+        }
+
+        try std.zig.stringEscape(&.{byte}, self.writer);
+        i += 1;
+    }
+
+    try self.writer.writeByte('"');
+}
+
+test string {
+    try testString("\"foobar\"", "foobar", .{});
+    try testString("\"€\"", "€", .{});
+    try testString("\"\\u{20ac}\"", "€", .{ .escape_non_ascii = true });
+    try testString("\"ÿ\"", "ÿ", .{});
+    try testString("\"\\u{ff}\"", "ÿ", .{ .escape_non_ascii = true });
+    try testString("\"\\xff\"", &.{0xff}, .{});
+    try testString("\"\\xff\"", &.{0xff}, .{ .escape_non_ascii = true });
+
+    // Truncated UTF-8 sequence (0xe2 starts a 3-byte sequence, 0x80 is a valid continuation byte)
+    try testString("\"\\xe2\\x80\"", &.{ 0xe2, 0x80 }, .{});
+    try testString("\"\\xe2\\x80\"", &.{ 0xe2, 0x80 }, .{ .escape_non_ascii = true });
+}
+
+fn testString(expected: []const u8, input: []const u8, options: StringOptions) !void {
+    var allocating: Writer.Allocating = .init(std.testing.allocator);
+    defer allocating.deinit();
+    var s: Serializer = .{ .writer = &allocating.writer };
+
+    try s.string(input, options);
+    try std.testing.expectEqualSlices(u8, expected, allocating.written());
+}
+
+test "fuzz string non-escaping" {
+    try std.testing.fuzz(StringOptions{ .escape_non_ascii = false }, fuzzString, .{});
+}
+
+test "fuzz string escaping" {
+    try std.testing.fuzz(StringOptions{ .escape_non_ascii = true }, fuzzString, .{});
+}
+
+fn fuzzString(options: StringOptions, smith: *std.testing.Smith) !void {
+    const gpa = std.testing.allocator;
+
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var allocating: Writer.Allocating = .init(gpa);
+    defer allocating.deinit();
+    var s: Serializer = .{ .writer = &allocating.writer };
+
+    var buf: [0x100]u8 = undefined;
+    const input = buf[0..smith.slice(&buf)];
+    try s.string(input, options);
+
+    var parse_diags: std.zon.parse.Diagnostics = undefined;
+    const actual = std.zon.parse.fromSlice([]const u8, .{
+        .gpa = gpa,
+        .arena = arena,
+        .source = try arena.dupeSentinel(u8, allocating.written(), 0),
+        .diagnostics = &parse_diags,
+    }) catch |err| switch (err) {
+        error.OutOfMemory => |e| return e,
+        error.ParseZon => |e| {
+            std.log.err("failed to parse serialized ZON: {f}", .{parse_diags.fmt("fuzz_input")});
+            return e;
+        },
+    };
+    try std.testing.expectEqualSlices(u8, input, actual);
 }
 
 /// Options for formatting multiline strings.
@@ -713,11 +873,11 @@ fn typeIsRecursiveInner(comptime T: type, comptime prev_visited: []const type) b
         .optional => |optional| typeIsRecursiveInner(optional.child, visited),
         .array => |array| typeIsRecursiveInner(array.child, visited),
         .vector => |vector| typeIsRecursiveInner(vector.child, visited),
-        .@"struct" => |@"struct"| for (@"struct".fields) |field| {
-            if (typeIsRecursiveInner(field.type, visited)) break true;
+        .@"struct" => |@"struct"| for (@"struct".field_types) |field_type| {
+            if (typeIsRecursiveInner(field_type, visited)) break true;
         } else false,
-        .@"union" => |@"union"| inline for (@"union".fields) |field| {
-            if (typeIsRecursiveInner(field.type, visited)) break true;
+        .@"union" => |@"union"| inline for (@"union".field_types) |field_type| {
+            if (typeIsRecursiveInner(field_type, visited)) break true;
         } else false,
         else => false,
     };
@@ -761,8 +921,8 @@ fn checkValueDepth(val: anytype, depth: usize) error{ExceededMaxDepth}!void {
         .array => for (val) |item| {
             try checkValueDepth(item, child_depth);
         },
-        .@"struct" => |@"struct"| inline for (@"struct".fields) |field_info| {
-            try checkValueDepth(@field(val, field_info.name), child_depth);
+        .@"struct" => |@"struct"| inline for (@"struct".field_names) |field_name| {
+            try checkValueDepth(@field(val, field_name), child_depth);
         },
         .@"union" => |@"union"| if (@"union".tag_type == null) {
             return;
@@ -814,6 +974,10 @@ test checkValueDepth {
     try expectValueDepthEquals(3, @as([]const []const u8, &.{&.{ 1, 2, 3 }}));
 }
 
+inline fn assertCanSerializeType(T: type) void {
+    if (!canSerializeType(T)) @compileError("cannot serialize: " ++ @typeName(T));
+}
+
 inline fn canSerializeType(T: type) bool {
     comptime return canSerializeTypeInner(T, &.{}, false);
 }
@@ -845,9 +1009,10 @@ fn canSerializeTypeInner(
         .frame,
         .@"anyframe",
         .@"opaque",
+        .spirv,
         => false,
 
-        .@"enum" => |@"enum"| @"enum".is_exhaustive,
+        .@"enum" => |@"enum"| @"enum".mode == .exhaustive,
 
         .pointer => |pointer| switch (pointer.size) {
             .one => canSerializeTypeInner(pointer.child, visited, parent_is_optional),
@@ -866,8 +1031,8 @@ fn canSerializeTypeInner(
         .@"struct" => |@"struct"| {
             for (visited) |V| if (T == V) return true;
             const new_visited = visited ++ .{T};
-            for (@"struct".fields) |field| {
-                if (!canSerializeTypeInner(field.type, new_visited, false)) return false;
+            for (@"struct".field_types) |field_type| {
+                if (!canSerializeTypeInner(field_type, new_visited, false)) return false;
             }
             return true;
         },
@@ -875,8 +1040,8 @@ fn canSerializeTypeInner(
             for (visited) |V| if (T == V) return true;
             const new_visited = visited ++ .{T};
             if (@"union".tag_type == null) return false;
-            for (@"union".fields) |field| {
-                if (field.type != void and !canSerializeTypeInner(field.type, new_visited, false)) {
+            for (@"union".field_types) |field_type| {
+                if (field_type != void and !canSerializeTypeInner(field_type, new_visited, false)) {
                     return false;
                 }
             }
