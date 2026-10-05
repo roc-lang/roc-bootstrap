@@ -93,7 +93,8 @@ Checks completed locally:
   derivations: documentation/workflow and provenance-only edits reuse all
   compilation; Binaryen edits change only its eight compilation derivations.
 * Seven release-validator policy tests pass, including static-library target
-  architecture checks. Workflow actionlint and provenance
+  architecture checks and rejection of missing LLVM 22's newly split
+  `LLVMPlugins` and `LLVMFrontendDirective` libraries. Workflow actionlint and provenance
   script shellcheck pass. These are local definition checks, not attestations.
 * Roc's LLVM vendor tests pass in Zig 0.17 `ReleaseSafe`, covering target layout,
   ordered entry allocas, bitcode serialization, and successive module assembly.
@@ -101,6 +102,14 @@ Checks completed locally:
   tests in `ReleaseSafe`: dirty edits and reverts, import membership, dependency
   and exact toolchain changes, semantic options, path independence, and stable
   dependency ordering. Runtime cache wiring is still being validated.
+* Roc's checker passes 1,659 tests in `ReleaseSafe`; postcheck passes 622 tests
+  with one skip, LIR passes 537 tests, and LIR core passes 27 tests. The migration
+  exposed invalid test fixture lifetimes and allocator-dependent failure
+  injection; the corrected fixtures retain leak and allocation failure checks.
+* Actual compiler-runtime object builds pass on FreeBSD, OpenBSD, NetBSD,
+  x86_64 macOS (LLVM), and aarch64 macOS in Zig 0.17 `Debug`. Equivalent Zig 0.16
+  controls crash on the three BSDs and x86_64 macOS. The obsolete BSD exclusion
+  is removed; macOS still deliberately uses libSystem for math symbols.
 
 The Roc Nix development toolchain is built from hash-pinned Zig 0.17.0 source
 using the locked nixpkgs LLVM 22.1.5 package. This compiler's LLVM is separate
@@ -109,13 +118,17 @@ that the official prebuilt compiler selects an unusable dynamic loader inside
 the Nix sandbox; patching its library source cannot change the compiler's
 baked-in native detection. The source recipe applies nixpkgs' pinned `env`
 probe before compilation and checks a compiled native libc executable during
-installation. Its actual sandbox build and zlib link test are still running.
+installation. The source package passes its sandbox build and installation
+check; a separate sandbox probe compiles and runs a native libc/zlib program
+with Nix's compiler and linker flags intact.
 
 The first complete native LLVM compilation took 46 minutes 24 seconds, then
 failed Nix's dangling-symlink check because disabled Clang tools still installed
 aliases for the absent driver. The final native recipe disables that driver
-directory explicitly. This failed run is diagnostic evidence, not a successful
-build or performance measurement.
+directory explicitly. The final native LLVM stage builds successfully and
+passes Nix fixup; its output has only glibc/libgcc runtime references. Host Zig
+and the complete target bundle are still building. The failed first run is
+diagnostic evidence, not a successful build or performance measurement.
 
 The initial Roc 0.16 baseline is from `ce7b298cacaee79e7dbcaba3b6cde6d8f3d73bf9`
 on the same host, using four build jobs. Cold configure (`zig build --help` with
