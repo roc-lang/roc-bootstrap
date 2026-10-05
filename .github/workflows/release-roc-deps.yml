@@ -81,7 +81,12 @@ jobs:
           df -B1 / /nix/store > metrics/disk-before-host-build.txt
           python3 ci/test-release-validation.py
           python3 nix/check-cache-inputs.py
-          /usr/bin/time -v -o metrics/host-build.txt nix build --no-update-lock-file .#host-tools --out-link host-tools
+          # Client timing excludes the Nix daemon builders. Retain their real
+          # command lines, process limits, sampled RSS and cgroup counters too.
+          # --keep-failed preserves failed build directories for diagnostics;
+          # neither compiler options nor the four-core budget change.
+          python3 ci/monitor-build.py --output-dir metrics/host-build --client-time metrics/host-build-client.txt -- \
+            nix build --no-update-lock-file --keep-failed -L .#host-tools --out-link host-tools
           python3 ci/test-package-consumption.py --zig "$PWD/host-tools/bin/zig" --archive-script nix/archive.py
           /usr/bin/time -v -o metrics/host-export.txt nix copy --to "file://$PWD/host-cache" "$(readlink -f host-tools)"
           # The runtime closure deliberately omits these development outputs.
