@@ -152,16 +152,12 @@ jobs:
       - name: Compare a clean rebuild
         if: matrix.target == 'x86_64-linux-musl' && (github.event_name == 'push' || inputs.check-reproducibility)
         run: |
-          # --rebuild requires an existing output. Native development outputs
-          # are absent from the imported runtime closure, so build them once
-          # independently and compare with the host job's recorded NAR hashes.
-          /usr/bin/time -v -o metrics/native-rebuild.txt nix build --no-update-lock-file .#native-llvm .#host-zig --no-link
-          for stage in native-llvm host-zig; do
-            stage_path=$(nix eval --raw --no-update-lock-file ".#$stage.outPath")
-            nix-store --query --hash "$stage_path" > "metrics/$stage.nar-hash"
-            cmp "host-cache/$stage.nar-hash" "metrics/$stage.nar-hash"
-          done
-          /usr/bin/time -v -o metrics/stage-rebuilds.txt nix build --rebuild --no-update-lock-file .#host-tools .#zlib-x86_64-linux-musl .#zstd-x86_64-linux-musl .#llvm-x86_64-linux-musl .#binaryen-x86_64-linux-musl .#deps-x86_64-linux-musl --no-link
+          # --rebuild requires an existing output, which the build above just
+          # produced. These stages need only the imported shared tools. The
+          # native development outputs and the shared tools themselves are
+          # rebuilt independently by the reproduce-native job, because
+          # rebuilding them here as well exceeds the six-hour job limit.
+          /usr/bin/time -v -o metrics/stage-rebuilds.txt nix build --rebuild --no-update-lock-file .#zlib-x86_64-linux-musl .#zstd-x86_64-linux-musl .#llvm-x86_64-linux-musl .#binaryen-x86_64-linux-musl .#deps-x86_64-linux-musl --no-link
           /usr/bin/time -v -o metrics/rebuild.txt nix build --rebuild --no-update-lock-file .#release-x86_64-linux-musl --out-link rebuilt
           cmp assets/x86_64-linux-musl.tar.xz rebuilt/x86_64-linux-musl.tar.xz
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # ratchet:actions/upload-artifact@v4.6.2
@@ -175,10 +171,53 @@ jobs:
           name: metrics-${{ matrix.target }}
           path: metrics
 
+  reproduce-native:
+    needs: host-tools
+    name: Rebuild native tools independently
+    if: github.event_name == 'push' || inputs.check-reproducibility
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # ratchet:actions/checkout@v5
+      - uses: cachix/install-nix-action@b85815f71a6de0ddee80b8a80a98d43f4bcc66c7 # ratchet:cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            sandbox = true
+            sandbox-fallback = false
+            max-jobs = 1
+            cores = 4
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # ratchet:actions/download-artifact@v5
+        with:
+          name: host-tools-cache
+          path: host-cache
+      - name: Rebuild the native tools and compare them with the shared build
+        run: |
+          mkdir -p metrics
+          # Native development outputs are absent from the shared runtime
+          # closure, so build them from scratch and compare with the shared
+          # job's recorded NAR hashes. This runs apart from the target build
+          # because the native LLVM build alone takes over two hours.
+          /usr/bin/time -v -o metrics/native-rebuild.txt nix build --no-update-lock-file .#native-llvm .#host-zig --no-link
+          for stage in native-llvm host-zig; do
+            stage_path=$(nix eval --raw --no-update-lock-file ".#$stage.outPath")
+            nix-store --query --hash "$stage_path" > "metrics/$stage.nar-hash"
+            cmp "host-cache/$stage.nar-hash" "metrics/$stage.nar-hash"
+          done
+          # Rebuild the shared tools from those independently built inputs.
+          host_path=$(nix eval --raw --no-update-lock-file .#packages.x86_64-linux.host-tools.outPath)
+          nix copy --no-check-sigs --from "file://$PWD/host-cache" "$host_path"
+          /usr/bin/time -v -o metrics/host-tools-rebuild.txt nix build --rebuild --no-update-lock-file .#host-tools --no-link
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # ratchet:actions/upload-artifact@v4.6.2
+        if: always()
+        with:
+          name: metrics-reproduce-native
+          path: metrics
+
   create-draft-release:
     name: Assemble verified release draft
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/zig-')
-    needs: build
+    needs: [build, reproduce-native]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
