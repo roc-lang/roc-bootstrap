@@ -9,29 +9,25 @@ const Target = std.Target;
 const assert = std.debug.assert;
 
 const glibc = @import("libs/glibc.zig");
-const introspect = @import("introspect.zig");
 const target = @import("target.zig");
 
 pub fn cmdTargets(
     allocator: Allocator,
     io: Io,
+    directories: *const std.zig.Directories,
     args: []const []const u8,
     out: *std.Io.Writer,
     native_target: *const Target,
 ) !void {
     _ = args;
-    var zig_lib_directory = introspect.findZigLibDir(allocator, io) catch |err|
-        fatal("unable to find zig installation directory: {t}", .{err});
-    defer zig_lib_directory.handle.close(io);
-    defer allocator.free(zig_lib_directory.path.?);
-
+    const zig_lib_directory = directories.zig_lib;
     const abilists_contents = zig_lib_directory.handle.readFileAlloc(
         io,
         glibc.abilists_path,
         allocator,
         .limited(glibc.abilists_max_size),
     ) catch |err| switch (err) {
-        error.OutOfMemory => return error.OutOfMemory,
+        error.OutOfMemory => |e| return e,
         else => fatal("unable to read " ++ glibc.abilists_path ++ ": {t}", .{err}),
     };
     defer allocator.free(abilists_contents);
@@ -44,9 +40,9 @@ pub fn cmdTargets(
     {
         var root_obj = try serializer.beginStruct(.{});
 
-        try root_obj.field("arch", meta.fieldNames(Target.Cpu.Arch), .{});
-        try root_obj.field("os", meta.fieldNames(Target.Os.Tag), .{});
-        try root_obj.field("abi", meta.fieldNames(Target.Abi), .{});
+        try root_obj.field("arch", @typeInfo(Target.Cpu.Arch).@"enum".field_names, .{});
+        try root_obj.field("os", @typeInfo(Target.Os.Tag).@"enum".field_names, .{});
+        try root_obj.field("abi", @typeInfo(Target.Abi).@"enum".field_names, .{});
 
         {
             var libc_obj = try root_obj.beginTupleField("libc", .{});

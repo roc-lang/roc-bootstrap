@@ -35,7 +35,12 @@ fn fromExcessK(T: type, x: Backing(T)) T {
     return @as(T, @bitCast(x)) +% std.math.minInt(T);
 }
 
-fn enumFieldLessThan(_: void, a: std.builtin.Type.EnumField, b: std.builtin.Type.EnumField) bool {
+const EnumField = struct {
+    name: [:0]const u8,
+    value: comptime_int,
+};
+
+fn enumFieldLessThan(_: void, a: EnumField, b: EnumField) bool {
     return a.value < b.value;
 }
 
@@ -47,7 +52,7 @@ pub inline fn baselineWeights(T: type) []const Weight {
         .bool, .int, .float => i: {
             // Reject types that don't have a fixed bitsize (esp. usize)
             // since they are not gauraunteed to fit in a u64 across targets.
-            if (std.mem.indexOfScalar(type, &.{
+            if (std.mem.findScalar(type, &.{
                 isize,      usize,
                 c_char,     c_longdouble,
                 c_short,    c_ushort,
@@ -67,17 +72,26 @@ pub inline fn baselineWeights(T: type) []const Weight {
             baselineWeights(Backing(T))
         else
             @compileError("non-packed unions cannot be weighted"),
-        .@"enum" => |e| if (!e.is_exhaustive)
+        .@"enum" => |e| if (e.mode == .nonexhaustive)
             baselineWeights(e.tag_type)
-        else if (e.fields.len == 0)
+        else if (e.field_names.len == 0)
             // Cannot be included in below branch due to `log2_int_ceil`
             @compileError("exhaustive zero-field enums cannot be weighted")
         else e: {
-            @setEvalBranchQuota(@intCast(4 * e.fields.len *
-                std.math.log2_int_ceil(usize, e.fields.len)));
+            @setEvalBranchQuota(@intCast(4 * e.field_names.len *
+                std.math.log2_int_ceil(usize, e.field_names.len)));
 
-            var sorted_fields = e.fields[0..e.fields.len].*;
-            std.mem.sortUnstable(std.builtin.Type.EnumField, &sorted_fields, {}, enumFieldLessThan);
+            var sorted_fields = blk: {
+                var fields: [e.field_names.len]EnumField = undefined;
+                for (e.field_names, e.field_values, &fields) |f_name, f_value, *field| {
+                    field.* = .{
+                        .name = f_name,
+                        .value = f_value,
+                    };
+                }
+                break :blk fields;
+            };
+            std.mem.sortUnstable(EnumField, &sorted_fields, {}, enumFieldLessThan);
 
             var weights: []const Weight = &.{};
             var seq_first: u64 = sorted_fields[0].value;
@@ -155,7 +169,7 @@ test baselineWeights {
 fn valueFromInt(T: anytype, int: Backing(T)) T {
     @disableInstrumentation();
     return switch (@typeInfo(T)) {
-        .@"enum" => @enumFromInt(int),
+        .@"enum" => @fromBackingInt(@intCast(int)),
         else => @bitCast(int),
     };
 }
@@ -316,10 +330,10 @@ fn weightsContain(int: u64, weights: []const Weight) bool {
 inline fn allBitPatternsValid(T: type) bool {
     return comptime switch (@typeInfo(T)) {
         .void, .bool, .int, .float => true,
-        inline .@"struct", .@"union" => |c| c.layout == .@"packed" and for (c.fields) |f| {
-            if (!allBitPatternsValid(f.type)) break false;
+        inline .@"struct", .@"union" => |c| c.layout == .@"packed" and for (c.field_types) |f_type| {
+            if (!allBitPatternsValid(f_type)) break false;
         } else true,
-        .@"enum" => |e| !e.is_exhaustive,
+        .@"enum" => |e| e.mode == .nonexhaustive,
         else => unreachable,
     };
 }
@@ -346,16 +360,16 @@ fn UnionTagWithoutUninitializable(T: type) type {
     const u = @typeInfo(T).@"union";
     const Tag = u.tag_type orelse @compileError("union must have tag");
     const e = @typeInfo(Tag).@"enum";
-    var field_names: [e.fields.len][]const u8 = undefined;
-    var field_values: [e.fields.len]e.tag_type = undefined;
+    var field_names: [e.field_names.len][]const u8 = undefined;
+    var field_values: [e.field_names.len]e.tag_type = undefined;
     var n_fields = 0;
-    for (u.fields) |f| {
-        switch (f.type) {
+    for (u.field_names, u.field_types) |f_name, f_type| {
+        switch (f_type) {
             noreturn => continue,
             else => {},
         }
-        field_names[n_fields] = f.name;
-        field_values[n_fields] = @intFromEnum(@field(Tag, f.name));
+        field_names[n_fields] = f_name;
+        field_values[n_fields] = @backingInt(@field(Tag, f_name));
         n_fields += 1;
     }
     return @Enum(e.tag_type, .exhaustive, field_names[0..n_fields], field_values[0..n_fields]);
@@ -381,13 +395,13 @@ pub fn valueWithHash(s: *Smith, T: type, hash: u32) T {
             }
             break :full @bitCast(int);
         },
-        .@"enum" => |e| if (e.is_exhaustive) v: {
+        .@"enum" => |e| if (e.mode == .exhaustive) v: {
             if (@bitSizeOf(e.tag_type) <= 64) {
                 break :v s.valueWeightedWithHash(T, baselineWeights(T), hash);
             }
             break :v std.enums.fromInt(T, s.valueWithHash(e.tag_type, hash)) orelse
-                @enumFromInt(e.fields[0].value);
-        } else @enumFromInt(s.valueWithHash(e.tag_type, hash)),
+                @fromBackingInt(@intCast(e.field_values[0]));
+        } else @fromBackingInt(@intCast(s.valueWithHash(e.tag_type, hash))),
         .optional => |o| if (s.valueWithHash(bool, hash))
             null
         else
@@ -406,11 +420,11 @@ pub fn valueWithHash(s: *Smith, T: type, hash: u32) T {
         .@"struct" => |st| if (!allBitPatternsValid(T)) v: {
             var v: T = undefined;
             var rhash = hash;
-            inline for (st.fields) |f| {
+            inline for (st.field_names, st.field_types) |f_name, f_type| {
                 // rhash is incremented in the call so our rhash state is not reused (e.g. with
                 // two nested structs. note that xor cannot work for this case as the bit would
                 // be flipped back here)
-                @field(v, f.name) = s.valueWithHash(f.type, rhash +% 1);
+                @field(v, f_name) = s.valueWithHash(f_type, rhash +% 1);
                 rhash = std.hash.int(rhash);
             }
             break :v v;
@@ -694,7 +708,7 @@ fn constructInput(comptime values: []const union(enum) {
 }
 
 test value {
-    if (@import("builtin").zig_backend == .stage2_c) return error.SkipZigTest; // TODO
+    if (builtin.zig_backend == .stage2_c) return error.SkipZigTest;
 
     const S = struct {
         v: void = {},
@@ -704,7 +718,7 @@ test value {
         io: u128 = (1 << 80) | (1 << 23),
         fd: f64 = std.math.pi,
         ft: f80 = std.math.e,
-        eh: enum(u16) { a, _ } = @enumFromInt(999),
+        eh: enum(u16) { a, _ } = @fromBackingInt(@intCast(999)),
         eo: enum(u128) { a, b, _ } = .b,
         aw: [3]u32 = .{ 1 << 30, 1 << 20, 1 << 10 },
         vw: @Vector(3, u32) = .{ 1 << 10, 1 << 20, 1 << 30 },
@@ -733,7 +747,7 @@ test value {
     };
     const s: S = .{};
     const ft_bits: u80 = @bitCast(s.ft);
-    const eo_bits = @intFromEnum(s.eo);
+    const eo_bits = @backingInt(s.eo);
 
     var smith: Smith = .{
         .in = constructInput(&.{
@@ -744,7 +758,7 @@ test value {
             .{ .int = @truncate(s.io) }, .{ .int = @intCast(s.io >> 64) }, // io
             .{ .int = @bitCast(s.fd) }, // fd
             .{ .int = @truncate(ft_bits) }, .{ .int = @intCast(ft_bits >> 64) }, // ft
-            .{ .int = @intFromEnum(s.eh) }, // eh
+            .{ .int = @backingInt(s.eh) }, // eh
             .{ .int = @truncate(eo_bits) }, .{ .int = @intCast(eo_bits >> 64) }, // eo
             .{ .int = s.aw[0] }, .{ .int = s.aw[1] }, .{ .int = s.aw[2] }, // aw
             .{ .int = s.vw[0] }, .{ .int = s.vw[1] }, .{ .int = s.vw[2] }, // vw
@@ -753,8 +767,8 @@ test value {
             .{ .int = s.s.q }, // s.q
             //sz
             .{ .int = @as(u8, @bitCast(s.sp)) }, // sp
-            .{ .int = s.si.a }, .{ .int = @intFromEnum(s.si.b) }, // si
-            .{ .int = @intFromEnum(s.u) }, .{ .int = s.u.b }, // u
+            .{ .int = s.si.a }, .{ .int = @backingInt(s.si.b) }, // si
+            .{ .int = @backingInt(s.u) }, .{ .int = s.u.b }, // u
             .{ .int = @as(u16, @bitCast(s.up)) }, // up
             // invalid values
             .{ .int = 555 }, // invalid.ib

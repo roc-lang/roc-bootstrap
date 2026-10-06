@@ -586,7 +586,6 @@ test "@fieldParentPtr extern struct last zero-bit field" {
 }
 
 test "@fieldParentPtr unaligned packed struct" {
-    if (builtin.zig_backend == .stage2_c) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
@@ -725,7 +724,6 @@ test "@fieldParentPtr unaligned packed struct" {
 }
 
 test "@fieldParentPtr aligned packed struct" {
-    if (builtin.zig_backend == .stage2_c) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
@@ -1757,7 +1755,6 @@ test "@fieldParentPtr packed union" {
     if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
-    if (builtin.target.cpu.arch.endian() == .big) return error.SkipZigTest; // TODO
 
     const C = packed union {
         a: packed struct(u32) {
@@ -1898,13 +1895,12 @@ test "@fieldParentPtr packed union" {
 }
 
 test "@fieldParentPtr tagged union all zero-bit fields" {
-    if (builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
 
     const C = union(enum) {
         a: u0,
-        b: i0,
+        b: void,
     };
 
     {
@@ -1939,20 +1935,20 @@ test "@fieldParentPtr tagged union all zero-bit fields" {
     }
 
     {
-        const c: C = .{ .b = 0 };
+        const c: C = .{ .b = {} };
         const pcf = &c.b;
         const pc: *const C = @alignCast(@fieldParentPtr("b", pcf));
         try expect(pc == &c);
     }
     {
-        const c: C = .{ .b = 0 };
+        const c: C = .{ .b = {} };
         const pcf = &c.b;
         var pc: *const C = undefined;
         pc = @alignCast(@fieldParentPtr("b", pcf));
         try expect(pc == &c);
     }
     {
-        const c: C = .{ .b = 0 };
+        const c: C = .{ .b = {} };
         var pcf: @TypeOf(&c.b) = undefined;
         pcf = &c.b;
         var pc: *const C = undefined;
@@ -1961,7 +1957,7 @@ test "@fieldParentPtr tagged union all zero-bit fields" {
     }
     {
         var c: C = undefined;
-        c = .{ .b = 0 };
+        c = .{ .b = {} };
         var pcf: @TypeOf(&c.b) = undefined;
         pcf = &c.b;
         var pc: *C = undefined;

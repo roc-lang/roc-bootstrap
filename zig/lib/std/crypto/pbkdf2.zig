@@ -74,7 +74,7 @@ pub fn pbkdf2(dk: []u8, password: []const u8, salt: []const u8, rounds: u32, com
     //      block
     //
 
-    const blocks_count = @as(u32, @intCast(std.math.divCeil(usize, dk_len, h_len) catch unreachable));
+    const blocks_count: u32 = @intCast(@divCeil(dk_len, h_len));
     var r = dk_len % h_len;
     if (r == 0) {
         r = h_len;
@@ -206,7 +206,7 @@ test "RFC 6070 16,777,216 iterations" {
     const c = 16777216;
     const dk_len = 20;
 
-    var dk = [_]u8{0} ** dk_len;
+    var dk: [dk_len]u8 = @splat(0);
 
     try pbkdf2(&dk, p, s, c, HmacSha1);
 

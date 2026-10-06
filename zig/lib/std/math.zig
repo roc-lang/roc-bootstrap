@@ -58,6 +58,7 @@ pub const floatMax = float.floatMax;
 pub const floatEps = float.floatEps;
 pub const floatEpsAt = float.floatEpsAt;
 pub const inf = float.inf;
+pub const long_double = float.long_double;
 pub const nan = float.nan;
 pub const snan = float.snan;
 
@@ -74,7 +75,7 @@ pub const snan = float.snan;
 ///
 /// NaN values are never considered equal to any value.
 pub fn approxEqAbs(comptime T: type, x: T, y: T, tolerance: T) bool {
-    assert(@typeInfo(T) == .float or @typeInfo(T) == .comptime_float);
+    comptime assert(@typeInfo(T) == .float or @typeInfo(T) == .comptime_float);
     assert(tolerance >= 0);
 
     // Fast path for equal values (and signed zeros and infinites).
@@ -102,7 +103,7 @@ pub fn approxEqAbs(comptime T: type, x: T, y: T, tolerance: T) bool {
 ///
 /// NaN values are never considered equal to any value.
 pub fn approxEqRel(comptime T: type, x: T, y: T, tolerance: T) bool {
-    assert(@typeInfo(T) == .float or @typeInfo(T) == .comptime_float);
+    comptime assert(@typeInfo(T) == .float or @typeInfo(T) == .comptime_float);
     assert(tolerance > 0);
 
     // Fast path for equal values (and signed zeros and infinites).
@@ -460,6 +461,11 @@ pub fn wrap(x: anytype, r: anytype) @TypeOf(x) {
     }
 }
 test wrap {
+    if (builtin.os.tag == .windows and builtin.cpu.arch == .x86 and builtin.abi == .msvc) {
+        // https://codeberg.org/ziglang/zig/issues/35520
+        return error.SkipZigTest;
+    }
+
     // Within range
     try testing.expect(wrap(@as(i32, -75), @as(i32, 180)) == -75);
     try testing.expect(wrap(@as(i32, -75), @as(i32, -180)) == -75);
@@ -778,7 +784,7 @@ pub fn Log2Int(comptime T: type) type {
     if (T == comptime_int) return comptime_int;
     const bits: u16 = @typeInfo(T).int.bits;
     const log2_bits = 16 - @clz(bits - 1);
-    return std.meta.Int(.unsigned, log2_bits);
+    return @Int(.unsigned, log2_bits);
 }
 
 /// Returns an unsigned int type that can hold the number of bits in T.
@@ -787,7 +793,7 @@ pub fn Log2IntCeil(comptime T: type) type {
     if (T == comptime_int) return comptime_int;
     const bits: u16 = @typeInfo(T).int.bits;
     const log2_bits = 16 - @clz(bits);
-    return std.meta.Int(.unsigned, log2_bits);
+    return @Int(.unsigned, log2_bits);
 }
 
 /// Returns the smallest integer type that can hold both from and to.
@@ -916,21 +922,10 @@ fn testDivFloor() !void {
 pub fn divCeil(comptime T: type, numerator: T, denominator: T) !T {
     @setRuntimeSafety(false);
     if (denominator == 0) return error.DivisionByZero;
-    const info = @typeInfo(T);
-    switch (info) {
-        .comptime_float, .float => return @ceil(numerator / denominator),
-        .comptime_int, .int => {
-            if (numerator < 0 and denominator < 0) {
-                if (info == .int and numerator == minInt(T) and denominator == -1)
-                    return error.Overflow;
-                return @divFloor(numerator + 1, denominator) + 1;
-            }
-            if (numerator > 0 and denominator > 0)
-                return @divFloor(numerator - 1, denominator) + 1;
-            return @divTrunc(numerator, denominator);
-        },
-        else => @compileError("divCeil unsupported on " ++ @typeName(T)),
+    if (@typeInfo(T) == .int and numerator == minInt(T) and denominator == -1) {
+        return error.Overflow;
     }
+    return @divCeil(numerator, denominator);
 }
 
 test divCeil {
@@ -1047,10 +1042,10 @@ fn testRem() !void {
 
 /// Returns the negation of the integer parameter.
 /// Result is a signed integer.
-pub fn negateCast(x: anytype) !std.meta.Int(.signed, @bitSizeOf(@TypeOf(x))) {
+pub fn negateCast(x: anytype) !@Int(.signed, @bitSizeOf(@TypeOf(x))) {
     if (@typeInfo(@TypeOf(x)).int.signedness == .signed) return negate(x);
 
-    const int = std.meta.Int(.signed, @bitSizeOf(@TypeOf(x)));
+    const int = @Int(.signed, @bitSizeOf(@TypeOf(x)));
     if (x > -minInt(int)) return error.Overflow;
 
     if (x == -minInt(int)) return minInt(int);
@@ -1140,13 +1135,11 @@ test isPowerOfTwo {
 pub fn ByteAlignedInt(comptime T: type) type {
     const info = @typeInfo(T).int;
     const bits = (info.bits + 7) / 8 * 8;
-    const extended_type = std.meta.Int(info.signedness, bits);
-    return extended_type;
+    return @Int(info.signedness, bits);
 }
 
 test ByteAlignedInt {
     try testing.expect(ByteAlignedInt(u0) == u0);
-    try testing.expect(ByteAlignedInt(i0) == i0);
     try testing.expect(ByteAlignedInt(u3) == u8);
     try testing.expect(ByteAlignedInt(u8) == u8);
     try testing.expect(ByteAlignedInt(i111) == i112);
@@ -1178,7 +1171,7 @@ pub inline fn floor(value: anytype) @TypeOf(value) {
 /// Returns the nearest power of two less than or equal to value, or
 /// zero if value is less than or equal to zero.
 pub fn floorPowerOfTwo(comptime T: type, value: T) T {
-    const uT = std.meta.Int(.unsigned, @typeInfo(T).int.bits);
+    const uT = @Int(.unsigned, @typeInfo(T).int.bits);
     if (value <= 0) return 0;
     return @as(T, 1) << log2_int(uT, @as(uT, @intCast(value)));
 }
@@ -1213,11 +1206,11 @@ pub inline fn ceil(value: anytype) @TypeOf(value) {
 /// Returns the next power of two (if the value is not already a power of two).
 /// Only unsigned integers can be used. Zero is not an allowed input.
 /// Result is a type with 1 more bit than the input type.
-pub fn ceilPowerOfTwoPromote(comptime T: type, value: T) std.meta.Int(@typeInfo(T).int.signedness, @typeInfo(T).int.bits + 1) {
+pub fn ceilPowerOfTwoPromote(comptime T: type, value: T) @Int(@typeInfo(T).int.signedness, @typeInfo(T).int.bits + 1) {
     comptime assert(@typeInfo(T) == .int);
     comptime assert(@typeInfo(T).int.signedness == .unsigned);
     assert(value != 0);
-    const PromotedType = std.meta.Int(@typeInfo(T).int.signedness, @typeInfo(T).int.bits + 1);
+    const PromotedType = @Int(@typeInfo(T).int.signedness, @typeInfo(T).int.bits + 1);
     const ShiftType = std.math.Log2Int(PromotedType);
     return @as(PromotedType, 1) << @as(ShiftType, @intCast(@typeInfo(T).int.bits - @clz(value - 1)));
 }
@@ -1229,7 +1222,7 @@ pub fn ceilPowerOfTwo(comptime T: type, value: T) (error{Overflow}!T) {
     comptime assert(@typeInfo(T) == .int);
     const info = @typeInfo(T).int;
     comptime assert(info.signedness == .unsigned);
-    const PromotedType = std.meta.Int(info.signedness, info.bits + 1);
+    const PromotedType = @Int(info.signedness, info.bits + 1);
     const overflowBit = @as(PromotedType, 1) << info.bits;
     const x = ceilPowerOfTwoPromote(T, value);
     if (overflowBit & x != 0) {
@@ -1392,7 +1385,8 @@ pub fn lerp(a: anytype, b: anytype, t: anytype) @TypeOf(a, b, t) {
 }
 
 test lerp {
-    if (builtin.zig_backend == .stage2_c) return error.SkipZigTest; // https://github.com/ziglang/zig/issues/17884
+    if (builtin.zig_backend == .stage2_c and builtin.cpu.arch.isArm()) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_c and builtin.cpu.arch.isX86()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_x86_64 and !comptime builtin.cpu.has(.x86, .fma)) return error.SkipZigTest; // https://github.com/ziglang/zig/issues/17884
 
     try testing.expectEqual(@as(f64, 75), lerp(50, 100, 0.5));
@@ -1441,19 +1435,17 @@ test lerp {
 
 /// Returns the maximum value of integer type T.
 pub fn maxInt(comptime T: type) comptime_int {
-    const info = @typeInfo(T);
-    const bit_count = info.int.bits;
-    if (bit_count == 0) return 0;
-    return (1 << (bit_count - @intFromBool(info.int.signedness == .signed))) - 1;
+    const info = @typeInfo(T).int;
+    return (1 << (info.bits - @intFromBool(info.signedness == .signed))) - 1;
 }
 
 /// Returns the minimum value of integer type T.
 pub fn minInt(comptime T: type) comptime_int {
-    const info = @typeInfo(T);
-    const bit_count = info.int.bits;
-    if (info.int.signedness == .unsigned) return 0;
-    if (bit_count == 0) return 0;
-    return -(1 << (bit_count - 1));
+    const info = @typeInfo(T).int;
+    return switch (info.signedness) {
+        .unsigned => 0,
+        .signed => -(1 << (info.bits - 1)),
+    };
 }
 
 test maxInt {
@@ -1465,7 +1457,6 @@ test maxInt {
     try testing.expect(maxInt(u64) == 18446744073709551615);
     try testing.expect(maxInt(u128) == 340282366920938463463374607431768211455);
 
-    try testing.expect(maxInt(i0) == 0);
     try testing.expect(maxInt(i1) == 0);
     try testing.expect(maxInt(i8) == 127);
     try testing.expect(maxInt(i16) == 32767);
@@ -1485,7 +1476,6 @@ test minInt {
     try testing.expect(minInt(u64) == 0);
     try testing.expect(minInt(u128) == 0);
 
-    try testing.expect(minInt(i0) == 0);
     try testing.expect(minInt(i1) == -1);
     try testing.expect(minInt(i8) == -128);
     try testing.expect(minInt(i16) == -32768);
@@ -1502,11 +1492,11 @@ test "max value type" {
 
 /// Multiply a and b. Return type is wide enough to guarantee no
 /// overflow.
-pub fn mulWide(comptime T: type, a: T, b: T) std.meta.Int(
+pub fn mulWide(comptime T: type, a: T, b: T) @Int(
     @typeInfo(T).int.signedness,
     @typeInfo(T).int.bits * 2,
 ) {
-    const ResultInt = std.meta.Int(
+    const ResultInt = @Int(
         @typeInfo(T).int.signedness,
         @typeInfo(T).int.bits * 2,
     );
@@ -1653,8 +1643,8 @@ pub const CompareOperator = enum {
     }
 
     test reverse {
-        inline for (@typeInfo(CompareOperator).@"enum".fields) |op_field| {
-            const op = @as(CompareOperator, @enumFromInt(op_field.value));
+        inline for (@typeInfo(CompareOperator).@"enum".field_values) |op_field_value| {
+            const op = @as(CompareOperator, @fromBackingInt(@intCast(op_field_value)));
             try testing.expect(compare(2, op, 3) == compare(3, op.reverse(), 2));
             try testing.expect(compare(3, op, 3) == compare(3, op.reverse(), 3));
             try testing.expect(compare(4, op, 3) == compare(3, op.reverse(), 4));
@@ -1709,8 +1699,8 @@ pub inline fn boolMask(comptime MaskInt: type, value: bool) MaskInt {
     if (@typeInfo(MaskInt) != .int)
         @compileError("boolMask requires an integer mask type.");
 
-    if (MaskInt == u0 or MaskInt == i0)
-        @compileError("boolMask cannot convert to u0 or i0, they are too small.");
+    if (MaskInt == u0)
+        @compileError("boolMask cannot convert to u0, it is too small.");
 
     // The u1 and i1 cases tend to overflow,
     // so we special case them here.
@@ -1874,4 +1864,40 @@ fn testSign() !void {
 test sign {
     try testSign();
     try comptime testSign();
+}
+
+/// Increases the bit width of an integer by copying the most significant bit.
+/// This results in the input and output having the same arithmetic value, when
+/// interpreted as two's complement integers.
+pub fn signExtend(To: type, n: anytype) To {
+    const From = @TypeOf(n);
+    if (From == u0) return 0;
+    const FromSigned = @Int(.signed, @typeInfo(From).int.bits);
+    const ToSigned = @Int(.signed, @typeInfo(To).int.bits);
+
+    return @bitCast(@as(ToSigned, @as(FromSigned, @bitCast(n))));
+}
+
+test signExtend {
+    const number: u8 = 0x86;
+    try testing.expectEqual(0xff86, signExtend(u16, number));
+
+    try testing.expectEqual(0, signExtend(u1, @as(u0, 0)));
+    try testing.expectEqual(0, signExtend(u16, @as(u0, 0)));
+
+    try testing.expectEqual(0x0000, signExtend(u16, @as(u1, 0b0)));
+    try testing.expectEqual(0xffff, signExtend(u16, @as(u1, 0b1)));
+
+    try testing.expectEqual(0b000, signExtend(u3, @as(u2, 0b00)));
+    try testing.expectEqual(0b001, signExtend(u3, @as(u2, 0b01)));
+    try testing.expectEqual(0b110, signExtend(u3, @as(u2, 0b10)));
+    try testing.expectEqual(0b111, signExtend(u3, @as(u2, 0b11)));
+    try testing.expectEqual(0b0000_0001, signExtend(u8, @as(u2, 0b01)));
+    try testing.expectEqual(0b1111_1110, signExtend(u8, @as(u2, 0b10)));
+
+    try testing.expectEqual(0x0039, signExtend(u16, @as(u8, 0x39)));
+    try testing.expectEqual(0xff93, signExtend(u16, @as(u8, 0x93)));
+
+    try testing.expectEqual(5, signExtend(i32, @as(i8, 5)));
+    try testing.expectEqual(-123, signExtend(i16, @as(i8, -123)));
 }

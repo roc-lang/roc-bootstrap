@@ -9,7 +9,7 @@ const mode = @import("builtin").mode;
 /// The Keccak-f permutation.
 pub fn KeccakF(comptime f: u11) type {
     comptime assert(f >= 200 and f <= 1600 and f % 200 == 0); // invalid bit size
-    const T = std.meta.Int(.unsigned, f / 25);
+    const T = @Int(.unsigned, f / 25);
     const Block = [25]T;
 
     const PI = [_]u5{
@@ -40,7 +40,7 @@ pub fn KeccakF(comptime f: u11) type {
             break :rc rc;
         };
 
-        st: Block = [_]T{0} ** 25,
+        st: Block = @splat(0),
 
         /// Initialize the state from a slice of bytes.
         pub fn init(bytes: [block_bytes]u8) Self {
@@ -70,7 +70,7 @@ pub fn KeccakF(comptime f: u11) type {
                 self.st[i / @sizeOf(T)] = mem.readInt(T, bytes[i..][0..@sizeOf(T)], .little);
             }
             if (i < bytes.len) {
-                var padded = [_]u8{0} ** @sizeOf(T);
+                var padded: [@sizeOf(T)]u8 = @splat(0);
                 @memcpy(padded[0 .. bytes.len - i], bytes[i..]);
                 self.st[i / @sizeOf(T)] = mem.readInt(T, padded[0..], .little);
             }
@@ -89,7 +89,7 @@ pub fn KeccakF(comptime f: u11) type {
                 self.st[i / @sizeOf(T)] ^= mem.readInt(T, bytes[i..][0..@sizeOf(T)], .little);
             }
             if (i < bytes.len) {
-                var padded = [_]u8{0} ** @sizeOf(T);
+                var padded: [@sizeOf(T)]u8 = @splat(0);
                 @memcpy(padded[0 .. bytes.len - i], bytes[i..]);
                 self.st[i / @sizeOf(T)] ^= mem.readInt(T, padded[0..], .little);
             }
@@ -102,7 +102,7 @@ pub fn KeccakF(comptime f: u11) type {
                 mem.writeInt(T, out[i..][0..@sizeOf(T)], self.st[i / @sizeOf(T)], .little);
             }
             if (i < out.len) {
-                var padded = [_]u8{0} ** @sizeOf(T);
+                var padded: [@sizeOf(T)]u8 = @splat(0);
                 mem.writeInt(T, padded[0..], self.st[i / @sizeOf(T)], .little);
                 @memcpy(out[i..], padded[0 .. out.len - i]);
             }
@@ -118,7 +118,7 @@ pub fn KeccakF(comptime f: u11) type {
                 mem.writeInt(T, out[i..][0..@sizeOf(T)], x, native_endian);
             }
             if (i < in.len) {
-                var padded = [_]u8{0} ** @sizeOf(T);
+                var padded: [@sizeOf(T)]u8 = @splat(0);
                 @memcpy(padded[0 .. in.len - i], in[i..]);
                 const x = mem.readInt(T, &padded, native_endian) ^ mem.nativeToLittle(T, self.st[i / @sizeOf(T)]);
                 mem.writeInt(T, &padded, x, native_endian);
@@ -140,7 +140,7 @@ pub fn KeccakF(comptime f: u11) type {
             const st = &self.st;
 
             // theta
-            var t = [_]T{0} ** 5;
+            var t: [5]T = @splat(0);
             inline for (0..5) |i| {
                 inline for (0..5) |j| {
                     t[i] ^= st[j * 5 + i];
@@ -202,7 +202,7 @@ pub fn State(comptime f: u11, comptime capacity: u11, comptime rounds: u5) type 
 
     // In debug mode, track transitions to prevent insecure ones.
     const Op = enum { uninitialized, initialized, updated, absorb, squeeze };
-    const TransitionTracker = if (mode == .Debug) struct {
+    const TransitionTracker = if (mode == .debug) struct {
         op: Op = .uninitialized,
 
         fn to(tracker: *@This(), next_op: Op) void {
@@ -294,7 +294,7 @@ pub fn State(comptime f: u11, comptime capacity: u11, comptime rounds: u5) type 
 
         /// Permute the state
         pub fn permute(self: *Self) void {
-            if (mode == .Debug) {
+            if (mode == .debug) {
                 if (self.transition.op == .absorb and self.offset > 0) {
                     @panic("cannot permute with pending input - call fillBlock() or pad() instead");
                 }
@@ -382,7 +382,7 @@ test "Keccak-f800" {
 }
 
 test "squeeze" {
-    var st = State(800, 256, 22).init([_]u8{0x80} ** 100, 0x01);
+    var st: State(800, 256, 22) = .init(@splat(0x80), 0x01);
 
     var out0: [15]u8 = undefined;
     var out1: [out0.len]u8 = undefined;

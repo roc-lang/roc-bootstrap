@@ -29,8 +29,8 @@ const Constants = struct {
 };
 const constants: Constants = blk: {
     @setEvalBranchQuota(2000);
-    var digits_per_limb = [_]u8{0} ** 37;
-    var bases = [_]Limb{0} ** 37;
+    var digits_per_limb: [37]u8 = @splat(0);
+    var bases: [37]Limb = @splat(0);
     for (2..37) |base| {
         digits_per_limb[base] = @intCast(math.log(Limb, base, math.maxInt(Limb)));
         bases[base] = std.math.pow(Limb, base, digits_per_limb[base]);
@@ -122,7 +122,7 @@ pub fn calcNonZeroTwosCompLimbCount(bit_count: usize) usize {
 /// Special cases `bit_count == 0` to return 1. Zero-bit integers can only store the value zero
 /// and this big integer implementation stores zero using one limb.
 pub fn calcTwosCompLimbCount(bit_count: usize) usize {
-    return @max(std.math.divCeil(usize, bit_count, @bitSizeOf(Limb)) catch unreachable, 1);
+    return @max(@divCeil(bit_count, @bitSizeOf(Limb)), 1);
 }
 
 /// a + b * c + *carry, sets carry to the overflow bits
@@ -1223,6 +1223,62 @@ pub const Mutable = struct {
 
     /// q = a / b (rem r)
     ///
+    /// a / b are ceiled (rounded towards +inf).
+    /// q may alias with a or b.
+    ///
+    /// Asserts there is enough memory to store q and r.
+    /// The upper bound for r limb count is `b.limbs.len`.
+    /// The upper bound for q limb count is given by `a.limbs`.
+    ///
+    /// `limbs_buffer` is used for temporary storage. The amount required is given by `calcDivLimbsBufferLen`.
+    pub fn divCeil(
+        q: *Mutable,
+        r: *Mutable,
+        a: Const,
+        b: Const,
+        limbs_buffer: []Limb,
+    ) void {
+        const sep = a.limbs.len + 2;
+        var x = a.toMutable(limbs_buffer[0..sep]);
+        var y = b.toMutable(limbs_buffer[sep..]);
+
+        // div performs truncating division (@divTrunc) which rounds towards negative
+        // infinity if the result is positive and towards positive infinity if the result is
+        // negative.
+        div(q, r, &x, &y);
+
+        // @rem gives the remainder after @divTrunc, and is defined by:
+        // x * @divTrunc(x, y) + @rem(x, y) = x
+        // For all integers x, y with y != 0.
+        // In the following comments, a, b will be integers with a >= 0, b > 0, and we will take
+        // modCeil to be the remainder after @divCeil, defined by:
+        // x * @divCeil(x, y) + modCeil(x, y) = x
+        // For all integers x, y with y != 0.
+
+        if (a.positive != b.positive or r.eqlZero()) {
+            // In this case either the result is negative or the remainder is 0.
+            // If the result is negative then the default truncating division already rounds
+            // towards positive infinity, so no adjustment is needed.
+            // If the remainder is 0 then the division is exact and no adjustment is needed.
+        } else {
+            // Same sign.
+            // We have:
+            // modCeil(a, b) != 0
+            // => @divCeil(a, b) = @divTrunc(a, b) + 1
+            // And:
+            // b * @divTrunc(a, b) + @rem(a, b) = a
+            // b * @divCeil(a, b) + modCeil(a, b) = a
+            // => b * @divTrunc(a, b) + b + modCeil(a, b) = a
+            // => modCeil(a, b) = @rem(a, b) - b
+            //
+            // This works for both positive and negative b because b keeps its sign.
+            q.addScalar(q.toConst(), 1);
+            r.sub(r.toConst(), y.toConst());
+        }
+    }
+
+    /// q = a / b (rem r)
+    ///
     /// a / b are truncated (rounded towards -inf).
     /// q may alias with a or b.
     ///
@@ -2047,7 +2103,7 @@ pub const Mutable = struct {
             var limb = switch (signedness) {
                 .unsigned => mem.readVarPackedInt(Limb, buffer, bit_index + bit_offset, bit_count - bit_index, endian, .unsigned),
                 .signed => b: {
-                    const SLimb = std.meta.Int(.signed, @bitSizeOf(Limb));
+                    const SLimb = @Int(.signed, @bitSizeOf(Limb));
                     const limb = mem.readVarPackedInt(SLimb, buffer, bit_index + bit_offset, bit_count - bit_index, endian, .signed);
                     break :b @as(Limb, @bitCast(limb));
                 },
@@ -2284,7 +2340,7 @@ pub const Const = struct {
                 // Make sure -0 is handled correctly.
                 if (self.eqlZero()) return 0;
 
-                const Unsigned = std.meta.Int(.unsigned, info.bits);
+                const Unsigned = @Int(.unsigned, info.bits);
 
                 if (!self.fitsInTwosComp(info.signedness, info.bits)) {
                     return error.TargetTooSmall;
@@ -2391,7 +2447,7 @@ pub const Const = struct {
         var limbs: [calcToStringLimbsBufferLen(available_len, 10)]Limb = undefined;
 
         const biggest: Const = .{
-            .limbs = &([1]Limb{comptime math.maxInt(Limb)} ** available_len),
+            .limbs = &@as([available_len]Limb, @splat(comptime math.maxInt(Limb))),
             .positive = false,
         };
         var buf: [biggest.sizeInBaseUpperBound(2)]u8 = undefined;
@@ -3310,6 +3366,25 @@ pub const Managed = struct {
         const limbs_buffer = try q.allocator.alloc(Limb, calcDivLimbsBufferLen(a.len(), b.len()));
         defer q.allocator.free(limbs_buffer);
         mq.divFloor(&mr, a.toConst(), b.toConst(), limbs_buffer);
+        q.setMetadata(mq.positive, mq.len);
+        r.setMetadata(mr.positive, mr.len);
+    }
+
+    /// q = a / b (rem r)
+    ///
+    /// a / b are ceiled (rounded towards positive infinity).
+    ///
+    /// Returns an error if memory could not be allocated.
+    pub fn divCeil(q: *Managed, r: *Managed, a: *const Managed, b: *const Managed) !void {
+        const q_alias = limbsAliasDistinct(q, a) or limbsAliasDistinct(q, b);
+        const r_alias = limbsAliasDistinct(r, a) or limbsAliasDistinct(r, b);
+        try q.ensureAliasAwareCapacity(a.len(), q_alias);
+        try r.ensureAliasAwareCapacity(b.len(), r_alias);
+        var mq = q.toMutable();
+        var mr = r.toMutable();
+        const limbs_buffer = try q.allocator.alloc(Limb, calcDivLimbsBufferLen(a.len(), b.len()));
+        defer q.allocator.free(limbs_buffer);
+        mq.divCeil(&mr, a.toConst(), b.toConst(), limbs_buffer);
         q.setMetadata(mq.positive, mq.len);
         r.setMetadata(mr.positive, mr.len);
     }

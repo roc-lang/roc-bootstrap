@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 const std = @import("std");
 const Io = std.Io;
 const Dir = std.Io.Dir;
+const Path = std.Build.Cache.Path;
 const process = std.process;
 const Progress = std.Progress;
 const print = std.debug.print;
@@ -24,6 +25,7 @@ const usage =
     \\
     \\Options:
     \\   --code-dir dir         Path to directory containing code example outputs
+    \\   --grammar file         Path to the PEG grammar definition
     \\   -h, --help             Print this help and exit
     \\
 ;
@@ -36,6 +38,7 @@ pub fn main(init: std.process.Init) !void {
     if (!args_it.skip()) @panic("expected self arg");
 
     var opt_code_dir: ?[]const u8 = null;
+    var opt_grammar: ?[]const u8 = null;
     var opt_input: ?[]const u8 = null;
     var opt_output: ?[]const u8 = null;
 
@@ -49,6 +52,12 @@ pub fn main(init: std.process.Init) !void {
                     opt_code_dir = param;
                 } else {
                     fatal("expected parameter after --code-dir", .{});
+                }
+            } else if (mem.eql(u8, arg, "--grammar")) {
+                if (args_it.next()) |param| {
+                    opt_grammar = param;
+                } else {
+                    fatal("expected parameter after --grammar", .{});
                 }
             } else {
                 fatal("unrecognized option: '{s}'", .{arg});
@@ -64,6 +73,7 @@ pub fn main(init: std.process.Init) !void {
     const input_path = opt_input orelse fatal("missing input file", .{});
     const output_path = opt_output orelse fatal("missing output file", .{});
     const code_dir_path = opt_code_dir orelse fatal("missing --code-dir argument", .{});
+    const grammar_path = opt_grammar orelse fatal("missing --grammar argument", .{});
 
     var in_file = try Dir.cwd().openFile(io, input_path, .{});
     defer in_file.close(io);
@@ -73,8 +83,16 @@ pub fn main(init: std.process.Init) !void {
     var out_file_buffer: [4096]u8 = undefined;
     var out_file_writer = out_file.writer(io, &out_file_buffer);
 
-    var code_dir = try Dir.cwd().openDir(io, code_dir_path, .{});
-    defer code_dir.close(io);
+    var code_dir: Path = .{
+        .root_dir = .{
+            .handle = try Dir.cwd().openDir(io, code_dir_path, .{}),
+            .path = code_dir_path,
+        },
+    };
+    defer code_dir.root_dir.handle.close(io);
+
+    const grammar = try Dir.cwd().readFileAlloc(io, grammar_path, init.gpa, .limited(max_doc_file_size));
+    defer init.gpa.free(grammar);
 
     var in_file_reader = in_file.reader(io, &.{});
     const input_file_bytes = try in_file_reader.interface.allocRemaining(arena, .limited(max_doc_file_size));
@@ -82,7 +100,7 @@ pub fn main(init: std.process.Init) !void {
     var tokenizer = Tokenizer.init(input_path, input_file_bytes);
     var toc = try genToc(arena, &tokenizer);
 
-    try genHtml(arena, io, &tokenizer, &toc, code_dir, &out_file_writer.interface);
+    try genHtml(arena, io, &tokenizer, &toc, code_dir, grammar, &out_file_writer.interface);
     try out_file_writer.end();
 }
 
@@ -320,6 +338,7 @@ const Node = union(enum) {
     HeaderOpen: HeaderOpen,
     SeeAlso: []const SeeAlsoItem,
     Code: Code,
+    Grammar,
     Link: Link,
     InlineSyntax: Token,
     Shell: Token,
@@ -337,20 +356,20 @@ const Action = enum {
     close,
 };
 
-fn genToc(allocator: Allocator, tokenizer: *Tokenizer) !Toc {
-    var urls = std.StringHashMap(Token).init(allocator);
+fn genToc(gpa: Allocator, tokenizer: *Tokenizer) !Toc {
+    var urls = std.StringHashMap(Token).init(gpa);
     errdefer urls.deinit();
 
     var header_stack_size: usize = 0;
     var last_action: Action = .open;
     var last_columns: ?u8 = null;
 
-    var toc_buf: Writer.Allocating = .init(allocator);
+    var toc_buf: Writer.Allocating = .init(gpa);
     defer toc_buf.deinit();
 
     const toc = &toc_buf.writer;
 
-    var nodes = std.array_list.Managed(Node).init(allocator);
+    var nodes = std.array_list.Managed(Node).init(gpa);
     defer nodes.deinit();
 
     try toc.writeByte('\n');
@@ -408,7 +427,7 @@ fn genToc(allocator: Allocator, tokenizer: *Tokenizer) !Toc {
 
                     header_stack_size += 1;
 
-                    const urlized = try urlize(allocator, content);
+                    const urlized = try urlize(gpa, content);
                     try nodes.append(Node{
                         .HeaderOpen = HeaderOpen{
                             .name = content,
@@ -450,7 +469,7 @@ fn genToc(allocator: Allocator, tokenizer: *Tokenizer) !Toc {
                         last_action = .close;
                     }
                 } else if (mem.eql(u8, tag_name, "see_also")) {
-                    var list = std.array_list.Managed(SeeAlsoItem).init(allocator);
+                    var list = std.array_list.Managed(SeeAlsoItem).init(gpa);
                     errdefer list.deinit();
 
                     while (true) {
@@ -465,7 +484,8 @@ fn genToc(allocator: Allocator, tokenizer: *Tokenizer) !Toc {
                             },
                             .separator => {},
                             .bracket_close => {
-                                try nodes.append(Node{ .SeeAlso = try list.toOwnedSlice() });
+                                try nodes.ensureUnusedCapacity(1);
+                                nodes.appendAssumeCapacity(.{ .SeeAlso = try list.toOwnedSlice() });
                                 break;
                             },
                             else => return parseError(tokenizer, see_also_tok, "invalid see_also token", .{}),
@@ -491,7 +511,7 @@ fn genToc(allocator: Allocator, tokenizer: *Tokenizer) !Toc {
 
                     try nodes.append(Node{
                         .Link = Link{
-                            .url = try urlize(allocator, url_name),
+                            .url = try urlize(gpa, url_name),
                             .name = name,
                             .token = name_tok,
                         },
@@ -506,6 +526,9 @@ fn genToc(allocator: Allocator, tokenizer: *Tokenizer) !Toc {
                             .token = name_tok,
                         },
                     });
+                } else if (mem.eql(u8, tag_name, "grammar")) {
+                    _ = try eatToken(tokenizer, .bracket_close);
+                    try nodes.append(.Grammar);
                 } else if (mem.eql(u8, tag_name, "syntax")) {
                     _ = try eatToken(tokenizer, .bracket_close);
                     const content_tok = try eatToken(tokenizer, .content);
@@ -592,9 +615,14 @@ fn genToc(allocator: Allocator, tokenizer: *Tokenizer) !Toc {
         }
     }
 
+    const nodes_slice = try nodes.toOwnedSlice();
+    errdefer gpa.free(nodes_slice);
+    const toc_slice = try toc_buf.toOwnedSlice();
+    errdefer gpa.free(toc_slice);
+
     return .{
-        .nodes = try nodes.toOwnedSlice(),
-        .toc = try toc_buf.toOwnedSlice(),
+        .nodes = nodes_slice,
+        .toc = toc_slice,
         .urls = urls,
     };
 }
@@ -617,12 +645,11 @@ fn urlize(gpa: Allocator, input: []const u8) ![]u8 {
     return try buf.toOwnedSlice(gpa);
 }
 
-fn escapeHtml(allocator: Allocator, input: []const u8) ![]u8 {
-    var buf = std.array_list.Managed(u8).init(allocator);
-    defer buf.deinit();
+fn escapeHtml(gpa: Allocator, input: []const u8) ![]u8 {
+    var buf: std.Io.Writer.Allocating = .init(gpa);
+    defer buf.deinit(gpa);
 
-    const out = buf.writer();
-    try writeEscaped(out, input);
+    try writeEscaped(&buf.writer, input);
     return try buf.toOwnedSlice();
 }
 
@@ -674,7 +701,7 @@ fn tokenizeAndPrintRaw(
     raw_src: []const u8,
 ) !void {
     const src_non_terminated = mem.trim(u8, raw_src, " \r\n");
-    const src = try allocator.dupeZ(u8, src_non_terminated);
+    const src = try allocator.dupeSentinel(u8, src_non_terminated, 0);
 
     try out.writeAll("<code>");
     var tokenizer = std.zig.Tokenizer.init(src);
@@ -685,10 +712,10 @@ fn tokenizeAndPrintRaw(
         next_tok_is_fn = false;
 
         const token = tokenizer.next();
-        if (mem.indexOf(u8, src[index..token.loc.start], "//")) |comment_start_off| {
+        if (mem.find(u8, src[index..token.loc.start], "//")) |comment_start_off| {
             // render one comment
             const comment_start = index + comment_start_off;
-            const comment_end_off = mem.indexOf(u8, src[comment_start..token.loc.start], "\n");
+            const comment_end_off = mem.find(u8, src[comment_start..token.loc.start], "\n");
             const comment_end = if (comment_end_off) |o| comment_start + o else token.loc.start;
 
             try writeEscapedLines(out, src[index..comment_start]);
@@ -866,7 +893,6 @@ fn tokenizeAndPrintRaw(
             .minus_pipe_equal,
             .asterisk,
             .asterisk_equal,
-            .asterisk_asterisk,
             .asterisk_percent,
             .asterisk_percent_equal,
             .asterisk_pipe,
@@ -892,7 +918,7 @@ fn tokenizeAndPrintRaw(
             .tilde,
             => try writeEscaped(out, src[token.loc.start..token.loc.end]),
 
-            .invalid, .invalid_periodasterisks => return parseError(
+            .invalid => return parseError(
                 docgen_tokenizer,
                 source_token,
                 "syntax error",
@@ -914,14 +940,14 @@ fn tokenizeAndPrint(
     return tokenizeAndPrintRaw(allocator, docgen_tokenizer, out, source_token, raw_src);
 }
 
-fn printSourceBlock(allocator: Allocator, docgen_tokenizer: *Tokenizer, out: *Writer, syntax_block: SyntaxBlock) !void {
+fn printSourceBlock(allocator: Allocator, docgen_tokenizer: *Tokenizer, out: *Writer, syntax_block: SyntaxBlock, content: ?[]const u8) !void {
     const source_type = @tagName(syntax_block.source_type);
 
     try out.print("<figure><figcaption class=\"{s}-cap\"><cite class=\"file\">{s}</cite></figcaption><pre>", .{ source_type, syntax_block.name });
     switch (syntax_block.source_type) {
         .zig => try tokenizeAndPrint(allocator, docgen_tokenizer, out, syntax_block.source_token),
         else => {
-            const raw_source = docgen_tokenizer.buffer[syntax_block.source_token.start..syntax_block.source_token.end];
+            const raw_source = content orelse docgen_tokenizer.buffer[syntax_block.source_token.start..syntax_block.source_token.end];
             const trimmed_raw_source = mem.trim(u8, raw_source, " \r\n");
 
             try out.writeAll("<code>");
@@ -984,7 +1010,8 @@ fn genHtml(
     io: Io,
     tokenizer: *Tokenizer,
     toc: *Toc,
-    code_dir: Dir,
+    code_dir: Path,
+    grammar: []const u8,
     out: *Writer,
 ) !void {
     for (toc.nodes) |node| {
@@ -1032,7 +1059,7 @@ fn genHtml(
                 try printShell(out, raw_shell_content, true);
             },
             .SyntaxBlock => |syntax_block| {
-                try printSourceBlock(allocator, tokenizer, out, syntax_block);
+                try printSourceBlock(allocator, tokenizer, out, syntax_block, null);
             },
             .Code => |code| {
                 const out_basename = try std.fmt.allocPrint(allocator, "{s}.out", .{
@@ -1040,12 +1067,24 @@ fn genHtml(
                 });
                 defer allocator.free(out_basename);
 
-                const contents = code_dir.readFileAlloc(io, out_basename, allocator, .limited(std.math.maxInt(u32))) catch |err| {
-                    return parseError(tokenizer, code.token, "unable to open '{s}': {t}", .{ out_basename, err });
+                const out_path: Path = .{
+                    .root_dir = code_dir.root_dir,
+                    .sub_path = out_basename,
+                };
+
+                const contents = out_path.root_dir.handle.readFileAlloc(io, out_path.sub_path, allocator, .unlimited) catch |err| {
+                    return parseError(tokenizer, code.token, "failed opening {f}: {t}", .{ out_path, err });
                 };
                 defer allocator.free(contents);
 
                 try out.writeAll(contents);
+            },
+            .Grammar => {
+                try printSourceBlock(allocator, tokenizer, out, .{
+                    .source_type = .peg,
+                    .name = "grammar.peg",
+                    .source_token = undefined,
+                }, grammar);
             },
         }
     }

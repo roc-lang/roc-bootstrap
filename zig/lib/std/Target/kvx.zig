@@ -16,22 +16,22 @@ pub const featureSetHasAny = CpuFeature.FeatureSetFns(Feature).featureSetHasAny;
 pub const featureSetHasAll = CpuFeature.FeatureSetFns(Feature).featureSetHasAll;
 
 pub const all_features = blk: {
-    const len = @typeInfo(Feature).@"enum".fields.len;
+    const len = @typeInfo(Feature).@"enum".field_names.len;
     std.debug.assert(len <= CpuFeature.Set.needed_bit_count);
     var result: [len]CpuFeature = undefined;
-    result[@intFromEnum(Feature.v3_1)] = .{
+    result[@backingInt(Feature.v3_1)] = .{
         .llvm_name = null,
         .description = "Enable ISA v3.1",
         .dependencies = featureSet(&[_]Feature{}),
     };
-    result[@intFromEnum(Feature.v3_2)] = .{
+    result[@backingInt(Feature.v3_2)] = .{
         .llvm_name = null,
         .description = "Enable ISA v3.2",
         .dependencies = featureSet(&[_]Feature{
             .v3_1,
         }),
     };
-    result[@intFromEnum(Feature.v4_1)] = .{
+    result[@backingInt(Feature.v4_1)] = .{
         .llvm_name = null,
         .description = "Enable ISA v4.1",
         .dependencies = featureSet(&[_]Feature{
@@ -41,7 +41,7 @@ pub const all_features = blk: {
     const ti = @typeInfo(Feature);
     for (&result, 0..) |*elem, i| {
         elem.index = i;
-        elem.name = ti.@"enum".fields[i].name;
+        elem.name = ti.@"enum".field_names[i];
     }
     break :blk result;
 };

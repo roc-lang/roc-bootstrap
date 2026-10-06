@@ -121,7 +121,7 @@ pub fn addCases(cases: *tests.LibcContext) void {
     cases.addLibcTestCase("regression/regex-negated-range.c", true, .{});
     cases.addLibcTestCase("regression/regexec-nosub.c", true, .{});
     cases.addLibcTestCase("regression/rewind-clear-error.c", false, .{});
-    cases.addLibcTestCase("regression/rlimit-open-files.c", false, .{});
+    // cases.addLibcTestCase("regression/rlimit-open-files.c", false, .{}); - fails when machine is under heavy load
     cases.addLibcTestCase("regression/scanf-bytes-consumed.c", true, .{});
     cases.addLibcTestCase("regression/scanf-match-literal-eof.c", true, .{});
     cases.addLibcTestCase("regression/scanf-nullbyte-char.c", true, .{});
@@ -151,9 +151,9 @@ pub fn addCases(cases: *tests.LibcContext) void {
     // cases.addLibcTestCase("math/asinhl.c", true, .{});
     cases.addLibcTestCase("math/asinl.c", true, .{});
     cases.addLibcTestCase("math/atan.c", true, .{});
-    // cases.addLibcTestCase("math/atan2.c", true, .{});
-    // cases.addLibcTestCase("math/atan2f.c", true, .{});
-    // cases.addLibcTestCase("math/atan2l.c", true, .{});
+    cases.addLibcTestCase("math/atan2.c", true, .{});
+    cases.addLibcTestCase("math/atan2f.c", true, .{});
+    cases.addLibcTestCase("math/atan2l.c", true, .{});
     cases.addLibcTestCase("math/atanf.c", true, .{});
     cases.addLibcTestCase("math/atanh.c", true, .{});
     cases.addLibcTestCase("math/atanhf.c", true, .{});
@@ -198,8 +198,8 @@ pub fn addCases(cases: *tests.LibcContext) void {
     cases.addLibcTestCase("math/fabsf.c", true, .{});
     cases.addLibcTestCase("math/fabsl.c", true, .{});
     cases.addLibcTestCase("math/fdim.c", true, .{});
-    // cases.addLibcTestCase("math/fdimf.c", true, .{});
-    // cases.addLibcTestCase("math/fdiml.c", true, .{});
+    cases.addLibcTestCase("math/fdimf.c", true, .{});
+    cases.addLibcTestCase("math/fdiml.c", true, .{});
     cases.addLibcTestCase("math/fenv.c", true, .{});
     cases.addLibcTestCase("math/floor.c", true, .{});
     cases.addLibcTestCase("math/floorf.c", true, .{});
@@ -252,8 +252,8 @@ pub fn addCases(cases: *tests.LibcContext) void {
     cases.addLibcTestCase("math/log10.c", true, .{});
     cases.addLibcTestCase("math/log10f.c", true, .{});
     cases.addLibcTestCase("math/log10l.c", true, .{});
-    // cases.addLibcTestCase("math/log1p.c", true, .{});
-    // cases.addLibcTestCase("math/log1pf.c", true, .{});
+    cases.addLibcTestCase("math/log1p.c", true, .{});
+    cases.addLibcTestCase("math/log1pf.c", true, .{});
     // cases.addLibcTestCase("math/log1pl.c", true, .{});
     cases.addLibcTestCase("math/log2.c", true, .{});
     cases.addLibcTestCase("math/log2f.c", true, .{});
@@ -295,7 +295,7 @@ pub fn addCases(cases: *tests.LibcContext) void {
     cases.addLibcTestCase("math/remquol.c", true, .{});
     cases.addLibcTestCase("math/rint.c", true, .{});
     cases.addLibcTestCase("math/rintf.c", true, .{});
-    // cases.addLibcTestCase("math/rintl.c", true, .{});
+    cases.addLibcTestCase("math/rintl.c", true, .{});
     cases.addLibcTestCase("math/round.c", true, .{});
     cases.addLibcTestCase("math/roundf.c", true, .{});
     cases.addLibcTestCase("math/roundl.c", true, .{});

@@ -37,10 +37,16 @@ const State = union(enum) {
     stored_block: u16,
     fixed_block,
     fixed_block_literal: u8,
-    fixed_block_match: u16,
+    fixed_block_match: struct {
+        distance: u16,
+        length: u16,
+    },
     dynamic_block,
     dynamic_block_literal: u8,
-    dynamic_block_match: u16,
+    dynamic_block_match: struct {
+        distance: u16,
+        length: u16,
+    },
     protocol_footer,
     end,
 };
@@ -129,10 +135,9 @@ fn discardDirect(r: *Reader, limit: std.Io.Limit) Reader.Error!usize {
     }
     const n = r.stream(&writer, limit) catch |err| switch (err) {
         error.WriteFailed => unreachable,
-        error.ReadFailed => return error.ReadFailed,
-        error.EndOfStream => return error.EndOfStream,
+        error.ReadFailed, error.EndOfStream => |e| return e,
     };
-    assert(n <= @intFromEnum(limit));
+    assert(n <= @backingInt(limit));
     return n;
 }
 
@@ -258,7 +263,7 @@ fn streamFallible(d: *Decompress, w: *Writer, limit: std.Io.Limit) Reader.Stream
                 return error.ReadFailed;
             }
         },
-        error.WriteFailed => return error.WriteFailed,
+        error.WriteFailed => |e| return e,
         else => |e| {
             // In the event of an error, state is unmodified so that it can be
             // better used to diagnose the failure.
@@ -269,7 +274,7 @@ fn streamFallible(d: *Decompress, w: *Writer, limit: std.Io.Limit) Reader.Stream
 }
 
 fn streamInner(d: *Decompress, w: *Writer, limit: std.Io.Limit) (Error || Reader.StreamError)!usize {
-    var remaining = @intFromEnum(limit);
+    var remaining = @backingInt(limit);
     const in = d.input;
     sw: switch (d.state) {
         .protocol_header => switch (d.container_metadata.container()) {
@@ -317,7 +322,7 @@ fn streamInner(d: *Decompress, w: *Writer, limit: std.Io.Limit) (Error || Reader
         },
         .block_header => {
             d.final_block = (try d.takeIntBits(u1)) != 0;
-            const block_type: BlockType = @enumFromInt(try d.takeIntBits(u2));
+            const block_type: BlockType = @fromBackingInt(@intCast(try d.takeIntBits(u2)));
             switch (block_type) {
                 .stored => {
                     d.alignBitsForward();
@@ -381,7 +386,7 @@ fn streamInner(d: *Decompress, w: *Writer, limit: std.Io.Limit) (Error || Reader
                 d.state = .{ .stored_block = @intCast(remaining_len - n) };
             }
             w.advance(n);
-            return @intFromEnum(limit) - remaining + n;
+            return @backingInt(limit) - remaining + n;
         },
         .fixed_block => while (true) {
             // Consume bytes
@@ -399,7 +404,8 @@ fn streamInner(d: *Decompress, w: *Writer, limit: std.Io.Limit) (Error || Reader
 
                 // Match
                 const length = try d.decodeLength(@intCast(sym - 257));
-                continue :sw .{ .fixed_block_match = length };
+                const distance = try d.decodeDistance(@bitReverse(try d.takeIntBits(u5)));
+                continue :sw .{ .fixed_block_match = .{ .length = length, .distance = distance } };
             }
 
             const byte: u8 = @intCast(sym);
@@ -409,7 +415,7 @@ fn streamInner(d: *Decompress, w: *Writer, limit: std.Io.Limit) (Error || Reader
                 try w.writeBytePreserve(flate.history_len, byte);
             } else {
                 d.state = .{ .fixed_block_literal = byte };
-                return @intFromEnum(limit) - remaining;
+                return @backingInt(limit) - remaining;
             }
         },
         .fixed_block_literal => |symbol| {
@@ -418,16 +424,21 @@ fn streamInner(d: *Decompress, w: *Writer, limit: std.Io.Limit) (Error || Reader
             try w.writeBytePreserve(flate.history_len, symbol);
             continue :sw .fixed_block;
         },
-        .fixed_block_match => |length| {
-            if (remaining >= length) {
+        .fixed_block_match => |match| {
+            if (remaining >= match.length) {
                 @branchHint(.likely);
-                const distance = try d.decodeDistance(@bitReverse(try d.takeIntBits(u5)));
-                try writeMatch(w, length, distance);
-                remaining -= length;
+                try writeMatch(w, match.length, match.distance);
+                remaining -= match.length;
                 continue :sw .fixed_block;
             } else {
-                d.state = .{ .fixed_block_match = length };
-                return @intFromEnum(limit) - remaining;
+                if (remaining > 0) {
+                    try writeMatch(w, @intCast(remaining), match.distance);
+                }
+                d.state = .{ .fixed_block_match = .{
+                    .distance = match.distance,
+                    .length = match.length - @as(u16, @intCast(remaining)),
+                } };
+                return @backingInt(limit);
             }
         },
         // In larger archives most blocks are usually dynamic, so
@@ -448,7 +459,9 @@ fn streamInner(d: *Decompress, w: *Writer, limit: std.Io.Limit) (Error || Reader
 
                 // Match
                 const length = try d.decodeLength(@intCast(sym - 257));
-                continue :sw .{ .dynamic_block_match = length };
+                const dsm = try d.decodeSymbol(&d.dst_dec);
+                const distance = try d.decodeDistance(@intCast(dsm));
+                continue :sw .{ .dynamic_block_match = .{ .length = length, .distance = distance } };
             }
 
             const byte: u8 = @intCast(sym);
@@ -458,7 +471,7 @@ fn streamInner(d: *Decompress, w: *Writer, limit: std.Io.Limit) (Error || Reader
                 try w.writeBytePreserve(flate.history_len, byte);
             } else {
                 d.state = .{ .dynamic_block_literal = byte };
-                return @intFromEnum(limit) - remaining;
+                return @backingInt(limit) - remaining;
             }
         },
         .dynamic_block_literal => |symbol| {
@@ -467,17 +480,21 @@ fn streamInner(d: *Decompress, w: *Writer, limit: std.Io.Limit) (Error || Reader
             try w.writeBytePreserve(flate.history_len, symbol);
             continue :sw .dynamic_block;
         },
-        .dynamic_block_match => |length| {
-            if (remaining >= length) {
+        .dynamic_block_match => |match| {
+            if (remaining >= match.length) {
                 @branchHint(.likely);
-                remaining -= length;
-                const dsm = try d.decodeSymbol(&d.dst_dec);
-                const distance = try d.decodeDistance(@intCast(dsm));
-                try writeMatch(w, length, distance);
+                remaining -= match.length;
+                try writeMatch(w, match.length, match.distance);
                 continue :sw .dynamic_block;
             } else {
-                d.state = .{ .dynamic_block_match = length };
-                return @intFromEnum(limit) - remaining;
+                if (remaining > 0) {
+                    try writeMatch(w, @intCast(remaining), match.distance);
+                }
+                d.state = .{ .dynamic_block_match = .{
+                    .distance = match.distance,
+                    .length = match.length - @as(u16, @intCast(remaining)),
+                } };
+                return @backingInt(limit);
             }
         },
         .protocol_footer => {
@@ -493,7 +510,7 @@ fn streamInner(d: *Decompress, w: *Writer, limit: std.Io.Limit) (Error || Reader
                 .raw => {},
             }
             d.state = .end;
-            return @intFromEnum(limit) - remaining;
+            return @backingInt(limit) - remaining;
         },
         .end => return error.EndOfStream,
     }
@@ -501,9 +518,11 @@ fn streamInner(d: *Decompress, w: *Writer, limit: std.Io.Limit) (Error || Reader
 
 /// Write match (back-reference to the same data slice) starting at `distance`
 /// back from current write position, and `length` of bytes.
+/// `length` may be less than the minimum match length to allow for writing
+/// partial matches, but must be greater than zero.
 fn writeMatch(w: *Writer, length: u16, distance: u16) !void {
     if (w.end < distance) return error.InvalidMatch;
-    assert(length >= token.min_length);
+    assert(length > 0);
     assert(length <= token.max_length);
     assert(distance >= token.min_distance);
     assert(distance <= token.max_distance);
@@ -579,7 +598,7 @@ fn peekBitsShortEnding(d: *Decompress, n: u4) !u16 {
 }
 
 fn tossBitsShort(d: *Decompress, n: u4) !void {
-    if (d.input.bufferedLen() * 8 + d.consumed_bits < n) return error.EndOfStream;
+    if (d.input.bufferedLen() * 8 - d.consumed_bits < n) return error.EndOfStream;
     d.tossBits(n);
 }
 
@@ -724,7 +743,7 @@ fn HuffmanDecoder(
             if (alphabet_size == 286)
                 if (lens[256] == 0) return error.MissingEndOfBlockCode;
 
-            var count = [_]u16{0} ** (@as(usize, max_code_bits) + 1);
+            var count: [@as(usize, max_code_bits) + 1]u16 = @splat(0);
             var max: usize = 0;
             for (lens) |n| {
                 if (n == 0) continue;
@@ -1065,6 +1084,15 @@ test "bug 18966" {
     );
 }
 
+test "truncated input ending when reading dynamic length bits" {
+    try testFailure(.raw, &[_]u8{
+        0x15, 0xd5, 0x07, 0x3b, 0x16, 0x0c, 0x03, 0x86,
+        0x61, 0x2b, 0xa3, 0xec, 0xec, 0x15, 0x95, 0x6c,
+        0x92, 0x4d, 0x19, 0x95, 0x4a, 0xb6, 0x22, 0x23,
+        0xc9,
+    }, error.EndOfStream);
+}
+
 test "reading into empty buffer" {
     // Inspired by https://github.com/ziglang/zig/issues/19895
     const input = &[_]u8{
@@ -1163,12 +1191,32 @@ fn testFailure(container: Container, in: []const u8, expected_err: anyerror) !vo
 }
 
 fn testDecompress(container: Container, compressed: []const u8, expected_plain: []const u8) !void {
-    var in: std.Io.Reader = .fixed(compressed);
     var aw: std.Io.Writer.Allocating = .init(testing.allocator);
     defer aw.deinit();
 
-    var decompress: Decompress = .init(&in, container, &.{});
-    const decompressed_len = try decompress.reader.streamRemaining(&aw.writer);
-    try testing.expectEqual(expected_plain.len, decompressed_len);
-    try testing.expectEqualSlices(u8, expected_plain, aw.written());
+    // Decompress once using the normal methods.
+    {
+        var in: std.Io.Reader = .fixed(compressed);
+        var decompress: Decompress = .init(&in, container, &.{});
+        const decompressed_len = try decompress.reader.streamRemaining(&aw.writer);
+        try testing.expectEqual(expected_plain.len, decompressed_len);
+        try testing.expectEqualSlices(u8, expected_plain, aw.written());
+    }
+
+    // Decompress again by streaming one byte at a time to check that there aren't
+    // any problems with things like writing partial matches, etc.
+    aw.clearRetainingCapacity();
+    {
+        var in: std.Io.Reader = .fixed(compressed);
+        var decompress: Decompress = .init(&in, container, &.{});
+        var decompressed_len: usize = 0;
+        while (true) {
+            decompressed_len += decompress.reader.stream(&aw.writer, .limited(1)) catch |err| switch (err) {
+                error.EndOfStream => break,
+                else => |e| return e,
+            };
+        }
+        try testing.expectEqual(expected_plain.len, decompressed_len);
+        try testing.expectEqualSlices(u8, expected_plain, aw.written());
+    }
 }

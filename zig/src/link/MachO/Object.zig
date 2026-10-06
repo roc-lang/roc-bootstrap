@@ -3,6 +3,7 @@ const Object = @This();
 const trace = @import("../../tracy.zig").trace;
 const Archive = @import("Archive.zig");
 const Atom = @import("Atom.zig");
+const dev = @import("../../dev.zig");
 const Dwarf = @import("Dwarf.zig");
 const File = @import("file.zig").File;
 const MachO = @import("../MachO.zig");
@@ -979,7 +980,7 @@ fn initSymbolStabs(self: *Object, allocator: Allocator, nlists: anytype, macho_f
         const open = syms[i];
         if (open.n_type.stab != .so) {
             try macho_file.reportParseError2(self.index, "unexpected symbol stab type 0x{x} as the first entry", .{
-                @intFromEnum(open.n_type.stab),
+                @backingInt(open.n_type.stab),
             });
             return error.MalformedObject;
         }
@@ -1009,7 +1010,7 @@ fn initSymbolStabs(self: *Object, allocator: Allocator, nlists: anytype, macho_f
                     stab.index = sym_lookup.find(nlist.n_value);
                 },
                 _ => {
-                    try macho_file.reportParseError2(self.index, "unhandled symbol stab type 0x{x}", .{@intFromEnum(nlist.n_type.stab)});
+                    try macho_file.reportParseError2(self.index, "unhandled symbol stab type 0x{x}", .{@backingInt(nlist.n_type.stab)});
                     return error.MalformedObject;
                 },
                 else => {
@@ -1805,11 +1806,11 @@ pub fn updateArSize(self: *Object, macho_file: *MachO) !void {
     };
 }
 
-pub fn writeAr(self: Object, ar_format: Archive.Format, macho_file: *MachO, writer: *Writer) !void {
+pub fn writeAr(self: Object, macho_file: *MachO, writer: *Writer) !void {
     // Header
     const size = try macho_file.cast(usize, self.output_ar_state.size);
     const basename = std.fs.path.basename(self.path);
-    try Archive.writeHeader(basename, size, ar_format, writer);
+    try Archive.writeHeader(basename, size, writer);
     // Data
     const file = macho_file.getFileHandle(self.file_handle);
     // TODO try using copyRangeAll
@@ -2032,8 +2033,8 @@ fn addReloc(offset: u32, arch: std.Target.Cpu.Arch) !macho.relocation_info {
         .r_length = 3,
         .r_extern = 0,
         .r_type = switch (arch) {
-            .aarch64 => @intFromEnum(macho.reloc_type_arm64.ARM64_RELOC_UNSIGNED),
-            .x86_64 => @intFromEnum(macho.reloc_type_x86_64.X86_64_RELOC_UNSIGNED),
+            .aarch64 => @backingInt(macho.reloc_type_arm64.ARM64_RELOC_UNSIGNED),
+            .x86_64 => @backingInt(macho.reloc_type_x86_64.X86_64_RELOC_UNSIGNED),
             else => unreachable,
         },
     };
@@ -2478,17 +2479,17 @@ pub fn getAtoms(self: *Object) []const Atom.Index {
 }
 
 fn addAtomExtra(self: *Object, allocator: Allocator, extra: Atom.Extra) !u32 {
-    const fields = @typeInfo(Atom.Extra).@"struct".fields;
-    try self.atoms_extra.ensureUnusedCapacity(allocator, fields.len);
+    const field_count = @typeInfo(Atom.Extra).@"struct".field_names.len;
+    try self.atoms_extra.ensureUnusedCapacity(allocator, field_count);
     return self.addAtomExtraAssumeCapacity(extra);
 }
 
 fn addAtomExtraAssumeCapacity(self: *Object, extra: Atom.Extra) u32 {
     const index = @as(u32, @intCast(self.atoms_extra.items.len));
-    const fields = @typeInfo(Atom.Extra).@"struct".fields;
-    inline for (fields) |field| {
-        self.atoms_extra.appendAssumeCapacity(switch (field.type) {
-            u32 => @field(extra, field.name),
+    const info = @typeInfo(Atom.Extra).@"struct";
+    inline for (info.field_names, info.field_types) |field_name, field_type| {
+        self.atoms_extra.appendAssumeCapacity(switch (field_type) {
+            u32 => @field(extra, field_name),
             else => @compileError("bad field type"),
         });
     }
@@ -2496,11 +2497,11 @@ fn addAtomExtraAssumeCapacity(self: *Object, extra: Atom.Extra) u32 {
 }
 
 pub fn getAtomExtra(self: Object, index: u32) Atom.Extra {
-    const fields = @typeInfo(Atom.Extra).@"struct".fields;
+    const info = @typeInfo(Atom.Extra).@"struct";
     var i: usize = index;
     var result: Atom.Extra = undefined;
-    inline for (fields) |field| {
-        @field(result, field.name) = switch (field.type) {
+    inline for (info.field_names, info.field_types) |field_name, field_type| {
+        @field(result, field_name) = switch (field_type) {
             u32 => self.atoms_extra.items[i],
             else => @compileError("bad field type"),
         };
@@ -2511,10 +2512,10 @@ pub fn getAtomExtra(self: Object, index: u32) Atom.Extra {
 
 pub fn setAtomExtra(self: *Object, index: u32, extra: Atom.Extra) void {
     assert(index > 0);
-    const fields = @typeInfo(Atom.Extra).@"struct".fields;
-    inline for (fields, 0..) |field, i| {
-        self.atoms_extra.items[index + i] = switch (field.type) {
-            u32 => @field(extra, field.name),
+    const info = @typeInfo(Atom.Extra).@"struct";
+    inline for (info.field_names, info.field_types, 0..) |field_name, field_type, i| {
+        self.atoms_extra.items[index + i] = switch (field_type) {
+            u32 => @field(extra, field_name),
             else => @compileError("bad field type"),
         };
     }
@@ -2539,17 +2540,17 @@ pub fn getSymbolRef(self: Object, index: Symbol.Index, macho_file: *MachO) MachO
 }
 
 pub fn addSymbolExtra(self: *Object, allocator: Allocator, extra: Symbol.Extra) !u32 {
-    const fields = @typeInfo(Symbol.Extra).@"struct".fields;
-    try self.symbols_extra.ensureUnusedCapacity(allocator, fields.len);
+    const field_count = @typeInfo(Symbol.Extra).@"struct".field_names.len;
+    try self.symbols_extra.ensureUnusedCapacity(allocator, field_count);
     return self.addSymbolExtraAssumeCapacity(extra);
 }
 
 fn addSymbolExtraAssumeCapacity(self: *Object, extra: Symbol.Extra) u32 {
     const index = @as(u32, @intCast(self.symbols_extra.items.len));
-    const fields = @typeInfo(Symbol.Extra).@"struct".fields;
-    inline for (fields) |field| {
-        self.symbols_extra.appendAssumeCapacity(switch (field.type) {
-            u32 => @field(extra, field.name),
+    const info = @typeInfo(Symbol.Extra).@"struct";
+    inline for (info.field_names, info.field_types) |field_name, field_type| {
+        self.symbols_extra.appendAssumeCapacity(switch (field_type) {
+            u32 => @field(extra, field_name),
             else => @compileError("bad field type"),
         });
     }
@@ -2557,11 +2558,11 @@ fn addSymbolExtraAssumeCapacity(self: *Object, extra: Symbol.Extra) u32 {
 }
 
 pub fn getSymbolExtra(self: Object, index: u32) Symbol.Extra {
-    const fields = @typeInfo(Symbol.Extra).@"struct".fields;
+    const info = @typeInfo(Symbol.Extra).@"struct";
     var i: usize = index;
     var result: Symbol.Extra = undefined;
-    inline for (fields) |field| {
-        @field(result, field.name) = switch (field.type) {
+    inline for (info.field_names, info.field_types) |field_name, field_type| {
+        @field(result, field_name) = switch (field_type) {
             u32 => self.symbols_extra.items[i],
             else => @compileError("bad field type"),
         };
@@ -2571,10 +2572,10 @@ pub fn getSymbolExtra(self: Object, index: u32) Symbol.Extra {
 }
 
 pub fn setSymbolExtra(self: *Object, index: u32, extra: Symbol.Extra) void {
-    const fields = @typeInfo(Symbol.Extra).@"struct".fields;
-    inline for (fields, 0..) |field, i| {
-        self.symbols_extra.items[index + i] = switch (field.type) {
-            u32 => @field(extra, field.name),
+    const info = @typeInfo(Symbol.Extra).@"struct";
+    inline for (info.field_names, info.field_types, 0..) |field_name, field_type, i| {
+        self.symbols_extra.items[index + i] = switch (field_type) {
+            u32 => @field(extra, field_name),
             else => @compileError("bad field type"),
         };
     }
@@ -2826,6 +2827,7 @@ const x86_64 = struct {
         handle: File.Handle,
         macho_file: *MachO,
     ) !void {
+        dev.checkAny(&.{ .llvm_backend, .x86_64_backend });
         const comp = macho_file.base.comp;
         const io = comp.io;
         const gpa = comp.gpa;
@@ -2844,7 +2846,7 @@ const x86_64 = struct {
         var i: usize = 0;
         while (i < relocs.len) : (i += 1) {
             const rel = relocs[i];
-            const rel_type: macho.reloc_type_x86_64 = @enumFromInt(rel.r_type);
+            const rel_type: macho.reloc_type_x86_64 = @fromBackingInt(@intCast(rel.r_type));
             const rel_offset = @as(u32, @intCast(rel.r_address));
 
             var addend = switch (rel.r_length) {
@@ -2853,7 +2855,7 @@ const x86_64 = struct {
                 2 => mem.readInt(i32, code[rel_offset..][0..4], .little),
                 3 => mem.readInt(i64, code[rel_offset..][0..8], .little),
             };
-            addend += switch (@as(macho.reloc_type_x86_64, @enumFromInt(rel.r_type))) {
+            addend += switch (@as(macho.reloc_type_x86_64, @fromBackingInt(@intCast(rel.r_type)))) {
                 .X86_64_RELOC_SIGNED_1 => 1,
                 .X86_64_RELOC_SIGNED_2 => 2,
                 .X86_64_RELOC_SIGNED_4 => 4,
@@ -2884,7 +2886,7 @@ const x86_64 = struct {
             } else rel.r_symbolnum;
 
             const has_subtractor = if (i > 0 and
-                @as(macho.reloc_type_x86_64, @enumFromInt(relocs[i - 1].r_type)) == .X86_64_RELOC_SUBTRACTOR)
+                @as(macho.reloc_type_x86_64, @fromBackingInt(@intCast(relocs[i - 1].r_type))) == .X86_64_RELOC_SUBTRACTOR)
             blk: {
                 if (rel_type != .X86_64_RELOC_UNSIGNED) {
                     try macho_file.reportParseError2(self.index, "{s},{s}: 0x{x}: X86_64_RELOC_SUBTRACTOR followed by {s}", .{
@@ -2938,6 +2940,7 @@ const x86_64 = struct {
     }
 
     fn validateRelocType(rel: macho.relocation_info, rel_type: macho.reloc_type_x86_64, is_extern: bool) !Relocation.Type {
+        dev.checkAny(&.{ .llvm_backend, .x86_64_backend });
         switch (rel_type) {
             .X86_64_RELOC_UNSIGNED => {
                 if (rel.r_pcrel == 1) return error.Pcrel;
@@ -2995,6 +2998,7 @@ const aarch64 = struct {
         handle: File.Handle,
         macho_file: *MachO,
     ) !void {
+        dev.checkAny(&.{ .llvm_backend, .aarch64_backend });
         const comp = macho_file.base.comp;
         const io = comp.io;
         const gpa = comp.gpa;
@@ -3017,7 +3021,7 @@ const aarch64 = struct {
 
             var addend: i64 = 0;
 
-            switch (@as(macho.reloc_type_arm64, @enumFromInt(rel.r_type))) {
+            switch (@as(macho.reloc_type_arm64, @fromBackingInt(@intCast(rel.r_type)))) {
                 .ARM64_RELOC_ADDEND => {
                     addend = rel.r_symbolnum;
                     i += 1;
@@ -3028,7 +3032,7 @@ const aarch64 = struct {
                         return error.MalformedObject;
                     }
                     rel = relocs[i];
-                    switch (@as(macho.reloc_type_arm64, @enumFromInt(rel.r_type))) {
+                    switch (@as(macho.reloc_type_arm64, @fromBackingInt(@intCast(rel.r_type)))) {
                         .ARM64_RELOC_PAGE21, .ARM64_RELOC_PAGEOFF12 => {},
                         else => |x| {
                             try macho_file.reportParseError2(
@@ -3051,7 +3055,7 @@ const aarch64 = struct {
                 else => {},
             }
 
-            const rel_type: macho.reloc_type_arm64 = @enumFromInt(rel.r_type);
+            const rel_type: macho.reloc_type_arm64 = @fromBackingInt(@intCast(rel.r_type));
             var is_extern = rel.r_extern == 1;
 
             const target = if (!is_extern) blk: {
@@ -3077,7 +3081,7 @@ const aarch64 = struct {
             } else rel.r_symbolnum;
 
             const has_subtractor = if (i > 0 and
-                @as(macho.reloc_type_arm64, @enumFromInt(relocs[i - 1].r_type)) == .ARM64_RELOC_SUBTRACTOR)
+                @as(macho.reloc_type_arm64, @fromBackingInt(@intCast(relocs[i - 1].r_type))) == .ARM64_RELOC_SUBTRACTOR)
             blk: {
                 if (rel_type != .ARM64_RELOC_UNSIGNED) {
                     try macho_file.reportParseError2(self.index, "{s},{s}: 0x{x}: ARM64_RELOC_SUBTRACTOR followed by {s}", .{
@@ -3131,6 +3135,7 @@ const aarch64 = struct {
     }
 
     fn validateRelocType(rel: macho.relocation_info, rel_type: macho.reloc_type_arm64, is_extern: bool) !Relocation.Type {
+        dev.checkAny(&.{ .llvm_backend, .aarch64_backend });
         switch (rel_type) {
             .ARM64_RELOC_UNSIGNED => {
                 if (rel.r_pcrel == 1) return error.Pcrel;

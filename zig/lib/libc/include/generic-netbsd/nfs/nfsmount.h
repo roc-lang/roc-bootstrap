@@ -1,4 +1,4 @@
-/*	$NetBSD: nfsmount.h,v 1.53 2015/07/15 03:28:55 manu Exp $	*/
+/*	$NetBSD: nfsmount.h,v 1.54.2.1 2026/06/03 18:46:36 martin Exp $	*/
 
 /*
  * Copyright (c) 1989, 1993
@@ -34,9 +34,8 @@
  *	@(#)nfsmount.h	8.3 (Berkeley) 3/30/95
  */
 
-
 #ifndef _NFS_NFSMOUNT_H_
-#define _NFS_NFSMOUNT_H_
+#define	_NFS_NFSMOUNT_H_
 
 #if defined(_KERNEL) && !defined(NFS_ARGS_ONLY)
 #include <sys/condvar.h>
@@ -93,13 +92,15 @@ struct nfs_args {
 #define	NFSMNT_READDIRSIZE	0x00020000  /* Set readdir size */
 #define NFSMNT_XLATECOOKIE	0x00040000  /* 32<->64 dir cookie xlation */
 #define	NFSMNT_NOAC		0x00080000  /* Turn off attribute cache */
+#define	NFSMNT_NOWCCMSG		0x00100000  /* Turn off attribute wcc messages */
 
 #define NFSMNT_BITS	"\177\20" \
     "b\00soft\0b\01wsize\0b\02rsize\0b\03timeo\0" \
     "b\04retrans\0b\05maxgrps\0b\06intr\0b\07noconn\0" \
     "b\10nqnfs\0b\11nfsv3\0b\12kerb\0b\13dumbtimr\0" \
     "b\14leaseterm\0b\15readahead\0b\16deadthresh\0b\17resvport\0" \
-    "b\20rdirplus\0b\21readdirsize\0b\22xlatecookie\0b\23noac\0"
+    "b\20rdirplus\0b\21readdirsize\0b\22xlatecookie\0b\23noac\0" \
+    "b\24nowccmsg\0"
 
 /*
  * NFS internal flags (nm_iflag) */
@@ -200,4 +201,4 @@ void	nfs_vfs_done(void);
 
 #endif /* _KERNEL */
 
-#endif
+#endif	/* _NFS_NFSMOUNT_H_ */

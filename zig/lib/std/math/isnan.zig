@@ -1,7 +1,6 @@
 const std = @import("../std.zig");
 const builtin = @import("builtin");
 const math = std.math;
-const meta = std.meta;
 const expect = std.testing.expect;
 
 pub fn isNan(x: anytype) bool {
@@ -12,7 +11,7 @@ pub fn isNan(x: anytype) bool {
 ///       this is tracked by https://github.com/ziglang/zig/issues/14366
 pub fn isSignalNan(x: anytype) bool {
     const T = @TypeOf(x);
-    const U = meta.Int(.unsigned, @bitSizeOf(T));
+    const U = @Int(.unsigned, @bitSizeOf(T));
     const quiet_signal_bit_mask = 1 << (math.floatFractionalBits(T) - 1);
     return isNan(x) and (@as(U, @bitCast(x)) & quiet_signal_bit_mask == 0);
 }
@@ -28,8 +27,6 @@ test isNan {
 }
 
 test isSignalNan {
-    if (builtin.zig_backend == .stage2_x86_64 and builtin.object_format == .coff and builtin.abi != .gnu) return error.SkipZigTest;
-
     inline for ([_]type{ f16, f32, f64, f80, f128, c_longdouble }) |T| {
         // TODO: Signalling NaN values get converted to quiet NaN values in
         //       some cases where they shouldn't such that this can fail.
@@ -39,6 +36,7 @@ test isSignalNan {
             builtin.cpu.arch != .hexagon and
             !builtin.cpu.arch.isMIPS32() and
             !builtin.cpu.arch.isPowerPC() and
+            !(builtin.cpu.arch.isX86() and builtin.os.tag == .windows and builtin.abi == .msvc) and // https://codeberg.org/ziglang/zig/issues/35519
             builtin.zig_backend != .stage2_c)
         {
             try expect(isSignalNan(math.snan(T)));

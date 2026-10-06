@@ -62,7 +62,7 @@ pub fn fileSourceHtml(
     var cursor: usize = ast.tokenStart(start_token);
 
     var indent: usize = 0;
-    if (std.mem.lastIndexOf(u8, ast.source[0..cursor], "\n")) |newline_index| {
+    if (std.mem.findLast(u8, ast.source[0..cursor], "\n")) |newline_index| {
         for (ast.source[newline_index + 1 .. cursor]) |c| {
             if (c == ' ') {
                 indent += 1;
@@ -302,7 +302,6 @@ pub fn fileSourceHtml(
             .minus_pipe_equal,
             .asterisk,
             .asterisk_equal,
-            .asterisk_asterisk,
             .asterisk_percent,
             .asterisk_percent_equal,
             .asterisk_pipe,
@@ -328,7 +327,7 @@ pub fn fileSourceHtml(
             .tilde,
             => try appendEscaped(out, slice),
 
-            .invalid, .invalid_periodasterisks => return error.InvalidToken,
+            .invalid => return error.InvalidToken,
         }
     }
 }

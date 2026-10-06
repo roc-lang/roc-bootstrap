@@ -95,7 +95,7 @@ const CodeDirectory = struct {
         };
         comptime var i = 0;
         inline while (i < n_special_slots) : (i += 1) {
-            cdir.special_slots[i] = [_]u8{0} ** hash_size;
+            cdir.special_slots[i] = @splat(0);
         }
         return cdir;
     }
@@ -246,8 +246,8 @@ pub fn deinit(self: *CodeSignature, allocator: Allocator) void {
     }
 }
 
-pub fn addEntitlements(self: *CodeSignature, allocator: Allocator, io: Io, path: []const u8) !void {
-    const inner = try Io.Dir.cwd().readFileAlloc(io, path, allocator, .limited(std.math.maxInt(u32)));
+pub fn addEntitlements(self: *CodeSignature, allocator: Allocator, io: Io, path: std.Build.Cache.Path) !void {
+    const inner = try path.root_dir.handle.readFileAlloc(io, path.sub_path, allocator, .limited(std.math.maxInt(u32)));
     self.entitlements = .{ .inner = inner };
 }
 

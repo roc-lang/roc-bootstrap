@@ -1,6 +1,7 @@
 const builtin = @import("builtin");
 const std = @import("std");
-const symbol = @import("../compiler_rt.zig").symbol;
+const compiler_rt = @import("../compiler_rt.zig");
+const symbol = compiler_rt.symbol;
 
 comptime {
     symbol(&__clzsi2, "__clzsi2");
@@ -198,7 +199,7 @@ pub fn __ctzti2(a: i128) callconv(.c) i32 {
 }
 
 inline fn ffsXi2(comptime T: type, a: T) i32 {
-    var x: std.meta.Int(.unsigned, @typeInfo(T).int.bits) = @bitCast(a);
+    var x: @Int(.unsigned, @typeInfo(T).int.bits) = @bitCast(a);
     var n: T = 1;
     // adapted from Number of trailing zeroes (see ctzXi2)
     var mask: @TypeOf(x) = std.math.maxInt(@TypeOf(x));

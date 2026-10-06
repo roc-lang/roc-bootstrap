@@ -41,7 +41,7 @@ pub const Curve25519 = struct {
 
     /// Multiply a point by the cofactor, returning WeakPublicKey if the element is in a small-order group.
     pub fn clearCofactor(p: Curve25519) WeakPublicKeyError!Curve25519 {
-        const cofactor = [_]u8{8} ++ [_]u8{0} ** 31;
+        const cofactor = [_]u8{8} ++ @as([31]u8, @splat(0));
         return ladder(p, cofactor, 4) catch return error.WeakPublicKey;
     }
 
@@ -129,9 +129,9 @@ test "curve25519" {
     const p = try Curve25519.basePoint.clampedMul(s);
     try p.rejectIdentity();
     var buf: [128]u8 = undefined;
-    try std.testing.expectEqualStrings(try std.fmt.bufPrint(&buf, "{X}", .{&p.toBytes()}), "E6F2A4D1C28EE5C7AD0329268255A468AD407D2672824C0C0EB30EA6EF450145");
+    try std.testing.expectEqualStrings(try std.mem.print(&buf, "{X}", .{&p.toBytes()}), "E6F2A4D1C28EE5C7AD0329268255A468AD407D2672824C0C0EB30EA6EF450145");
     const q = try p.clampedMul(s);
-    try std.testing.expectEqualStrings(try std.fmt.bufPrint(&buf, "{X}", .{&q.toBytes()}), "3614E119FFE55EC55B87D6B19971A9F4CBC78EFE80BEC55B96392BABCC712537");
+    try std.testing.expectEqualStrings(try std.mem.print(&buf, "{X}", .{&q.toBytes()}), "3614E119FFE55EC55B87D6B19971A9F4CBC78EFE80BEC55B96392BABCC712537");
 
     try Curve25519.rejectNonCanonical(s);
     s[31] |= 0x80;
@@ -168,7 +168,7 @@ test "elligator2" {
 }
 
 test "small order check" {
-    var s: [32]u8 = [_]u8{1} ++ [_]u8{0} ** 31;
+    var s: [32]u8 = [_]u8{1} ++ @as([31]u8, @splat(0));
     const small_order_ss: [7][32]u8 = .{
         .{
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0 (order 4)

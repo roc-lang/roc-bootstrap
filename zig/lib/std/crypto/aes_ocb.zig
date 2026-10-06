@@ -48,7 +48,7 @@ fn AesOcb(comptime Aes: anytype) type {
             }
 
             fn init(aes_enc_ctx: EncryptCtx) Lx {
-                const zeros = [_]u8{0} ** 16;
+                const zeros: [16]u8 = @splat(0);
                 var star: Block = undefined;
                 aes_enc_ctx.encrypt(&star, &zeros);
                 const dol = double(star);
@@ -62,8 +62,8 @@ fn AesOcb(comptime Aes: anytype) type {
             const full_blocks: usize = a.len / 16;
             const x_max = if (full_blocks > 0) math.log2_int(usize, full_blocks) else 0;
             const lt = lx.precomp(x_max);
-            var sum = [_]u8{0} ** 16;
-            var offset = [_]u8{0} ** 16;
+            var sum: [16]u8 = @splat(0);
+            var offset: [16]u8 = @splat(0);
             var i: usize = 0;
             while (i < full_blocks) : (i += 1) {
                 xorWith(&offset, lt[@ctz(i + 1)]);
@@ -74,7 +74,7 @@ fn AesOcb(comptime Aes: anytype) type {
             const leftover = a.len % 16;
             if (leftover > 0) {
                 xorWith(&offset, lx.star);
-                var padded = [_]u8{0} ** 16;
+                var padded: [16]u8 = @splat(0);
                 @memcpy(padded[0..leftover], a[i * 16 ..][0..leftover]);
                 padded[leftover] = 0x80;
                 var e = xorBlocks(offset, padded);
@@ -85,7 +85,7 @@ fn AesOcb(comptime Aes: anytype) type {
         }
 
         fn getOffset(aes_enc_ctx: EncryptCtx, npub: [nonce_length]u8) Block {
-            var nx = [_]u8{0} ** 16;
+            var nx: [16]u8 = @splat(0);
             nx[0] = @as(u8, @intCast(@as(u7, @truncate(tag_length * 8)) << 1));
             nx[16 - nonce_length - 1] = 1;
             nx[nx.len - nonce_length ..].* = npub;
@@ -103,7 +103,10 @@ fn AesOcb(comptime Aes: anytype) type {
 
         const has_aesni = builtin.cpu.has(.x86, .aes);
         const has_armaes = builtin.cpu.has(.aarch64, .aes);
-        const wb: usize = if ((builtin.cpu.arch == .x86_64 and has_aesni) or (builtin.cpu.arch == .aarch64 and has_armaes)) 4 else 0;
+        const wb: usize = if ((builtin.cpu.arch == .x86_64 and has_aesni) or (builtin.cpu.arch == .aarch64 and has_armaes))
+            4 // empirically what works best on x86_64 and aarch64 with AES-NI/ARM Crypto
+        else
+            Aes.block.parallel.optimal_parallel_blocks;
 
         /// c: ciphertext: output buffer should be of size m.len
         /// tag: authentication tag: output MAC
@@ -121,10 +124,10 @@ fn AesOcb(comptime Aes: anytype) type {
             const lt = lx.precomp(x_max);
 
             var offset = getOffset(aes_enc_ctx, npub);
-            var sum = [_]u8{0} ** 16;
+            var sum: [16]u8 = @splat(0);
             var i: usize = 0;
 
-            while (wb > 0 and i + wb <= full_blocks) : (i += wb) {
+            while (i + wb <= full_blocks) : (i += wb) {
                 var offsets: [wb]Block align(16) = undefined;
                 var es: [16 * wb]u8 align(16) = undefined;
                 var j: usize = 0;
@@ -155,7 +158,7 @@ fn AesOcb(comptime Aes: anytype) type {
                 xorWith(&offset, lx.star);
                 var pad = offset;
                 aes_enc_ctx.encrypt(&pad, &pad);
-                var e = [_]u8{0} ** 16;
+                var e: [16]u8 = @splat(0);
                 @memcpy(e[0..leftover], m[i * 16 ..][0..leftover]);
                 e[leftover] = 0x80;
                 for (m[i * 16 ..], 0..) |x, j| {
@@ -188,10 +191,10 @@ fn AesOcb(comptime Aes: anytype) type {
             const lt = lx.precomp(x_max);
 
             var offset = getOffset(aes_enc_ctx, npub);
-            var sum = [_]u8{0} ** 16;
+            var sum: [16]u8 = @splat(0);
             var i: usize = 0;
 
-            while (wb > 0 and i + wb <= full_blocks) : (i += wb) {
+            while (i + wb <= full_blocks) : (i += wb) {
                 var offsets: [wb]Block align(16) = undefined;
                 var es: [16 * wb]u8 align(16) = undefined;
                 var j: usize = 0;
@@ -226,7 +229,7 @@ fn AesOcb(comptime Aes: anytype) type {
                 for (c[i * 16 ..], 0..) |x, j| {
                     m[i * 16 + j] = pad[j] ^ x;
                 }
-                var e = [_]u8{0} ** 16;
+                var e: [16]u8 = @splat(0);
                 @memcpy(e[0..leftover], m[i * 16 ..][0..leftover]);
                 e[leftover] = 0x80;
                 xorWith(&sum, e);
@@ -262,8 +265,6 @@ const hexToBytes = std.fmt.hexToBytes;
 const testing = std.testing;
 
 test "AesOcb test vector 1" {
-    if (builtin.zig_backend == .stage2_c) return error.SkipZigTest;
-
     var k: [Aes128Ocb.key_length]u8 = undefined;
     var nonce: [Aes128Ocb.nonce_length]u8 = undefined;
     var tag: [Aes128Ocb.tag_length]u8 = undefined;
@@ -281,8 +282,6 @@ test "AesOcb test vector 1" {
 }
 
 test "AesOcb test vector 2" {
-    if (builtin.zig_backend == .stage2_c) return error.SkipZigTest;
-
     var k: [Aes128Ocb.key_length]u8 = undefined;
     var nonce: [Aes128Ocb.nonce_length]u8 = undefined;
     var tag: [Aes128Ocb.tag_length]u8 = undefined;
@@ -303,8 +302,6 @@ test "AesOcb test vector 2" {
 }
 
 test "AesOcb test vector 3" {
-    if (builtin.zig_backend == .stage2_c) return error.SkipZigTest;
-
     var k: [Aes128Ocb.key_length]u8 = undefined;
     var nonce: [Aes128Ocb.nonce_length]u8 = undefined;
     var tag: [Aes128Ocb.tag_length]u8 = undefined;
@@ -329,8 +326,6 @@ test "AesOcb test vector 3" {
 }
 
 test "AesOcb test vector 4" {
-    if (builtin.zig_backend == .stage2_c) return error.SkipZigTest;
-
     var k: [Aes128Ocb.key_length]u8 = undefined;
     var nonce: [Aes128Ocb.nonce_length]u8 = undefined;
     var tag: [Aes128Ocb.tag_length]u8 = undefined;
@@ -356,8 +351,6 @@ test "AesOcb test vector 4" {
 }
 
 test "AesOcb in-place encryption-decryption" {
-    if (builtin.zig_backend == .stage2_c) return error.SkipZigTest;
-
     var k: [Aes128Ocb.key_length]u8 = undefined;
     var nonce: [Aes128Ocb.nonce_length]u8 = undefined;
     var tag: [Aes128Ocb.tag_length]u8 = undefined;

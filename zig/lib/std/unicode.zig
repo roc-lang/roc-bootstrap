@@ -275,11 +275,16 @@ fn utf8ValidateSliceImpl(input: []const u8, comptime surrogates: Surrogates) boo
     const s7 = 0x44; // accept 4, size 4
 
     // Information about the first byte in a UTF-8 sequence.
-    const first = comptime ([_]u8{as} ** 128) ++ ([_]u8{xx} ** 64) ++ [_]u8{
-        xx, xx, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
-        s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
-        s2, s3, s3, s3, s3, s3, s3, s3, s3, s3, s3, s3, s3, s4, s3, s3,
-        s5, s6, s6, s6, s7, xx, xx, xx, xx, xx, xx, xx, xx, xx, xx, xx,
+    const first = comptime first: {
+        const a: [128]u8 = @splat(as);
+        const b: [64]u8 = @splat(xx);
+        const c: [64]u8 = .{
+            xx, xx, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+            s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+            s2, s3, s3, s3, s3, s3, s3, s3, s3, s3, s3, s3, s3, s4, s3, s3,
+            s5, s6, s6, s6, s7, xx, xx, xx, xx, xx, xx, xx, xx, xx, xx, xx,
+        };
+        break :first a ++ b ++ c;
     };
 
     const n = remaining.len;
@@ -419,6 +424,15 @@ pub const Utf8Iterator = struct {
         }
 
         return it.bytes[original_i..end_ix];
+    }
+
+    /// Look ahead at the next codepoint without advancing the iterator.
+    /// If no codepoints exist, then returns null.
+    pub fn peekCodepoint(it: *Utf8Iterator) ?u21 {
+        const original_i = it.i;
+        defer it.i = original_i;
+
+        return it.nextCodepoint();
     }
 };
 
@@ -647,7 +661,7 @@ test "validate slice" {
 
     // We skip a variable (based on recommended vector size) chunks of
     // ASCII characters. Let's make sure we're chunking correctly.
-    const str = [_]u8{'a'} ** 550 ++ "\xc0";
+    const str = @as([550]u8, @splat('a')) ++ "\xc0";
     for (0..str.len - 3) |i| {
         try testing.expect(!utf8ValidateSlice(str[i..]));
     }
@@ -763,6 +777,9 @@ fn testMiscInvalidUtf8() !void {
 test "utf8 iterator peeking" {
     try comptime testUtf8Peeking();
     try testUtf8Peeking();
+
+    comptime try testUtf8PeekCodepoint();
+    try testUtf8PeekCodepoint();
 }
 
 fn testUtf8Peeking() !void {
@@ -783,6 +800,20 @@ fn testUtf8Peeking() !void {
     try testing.expect(it.nextCodepointSlice() == null);
 
     try testing.expect(mem.eql(u8, &[_]u8{}, it.peek(1)));
+}
+
+fn testUtf8PeekCodepoint() !void {
+    const s = Utf8View.initComptime("東京市");
+    var it = s.iterator();
+
+    try testing.expect(it.peekCodepoint().? == 0x6771);
+    try testing.expect(it.peekCodepoint().? == 0x6771);
+    _ = it.nextCodepoint();
+    try testing.expect(it.peekCodepoint().? == 0x4eac);
+    _ = it.nextCodepoint();
+    try testing.expect(it.peekCodepoint().? == 0x5e02);
+    _ = it.nextCodepoint();
+    try testing.expect(it.peekCodepoint() == null);
 }
 
 fn testError(bytes: []const u8, expected_err: anyerror) !void {
@@ -1394,7 +1425,7 @@ test "ArrayList functions on a re-used list" {
 fn utf8ToUtf16LeStringLiteralImpl(comptime utf8: []const u8, comptime surrogates: Surrogates) *const [calcUtf16LeLenImpl(utf8, surrogates) catch |err| @compileError(err):0]u16 {
     return comptime blk: {
         const len: usize = calcUtf16LeLenImpl(utf8, surrogates) catch unreachable;
-        var utf16le: [len:0]u16 = [_:0]u16{0} ** len;
+        var utf16le: [len:0]u16 = @splat(0);
         const utf16le_len = utf8ToUtf16LeImpl(&utf16le, utf8[0..], surrogates) catch |err| @compileError(err);
         assert(len == utf16le_len);
         const final = utf16le;
@@ -1640,7 +1671,7 @@ test "validate WTF-8 slice" {
 
     // We skip a variable (based on recommended vector size) chunks of
     // ASCII characters. Let's make sure we're chunking correctly.
-    const str = [_]u8{'a'} ** 550 ++ "\xc0";
+    const str = @as([550]u8, @splat('a')) ++ "\xc0";
     for (0..str.len - 3) |i| {
         try testing.expect(!wtf8ValidateSlice(str[i..]));
     }
@@ -1752,6 +1783,15 @@ pub const Wtf8Iterator = struct {
         }
 
         return it.bytes[original_i..end_ix];
+    }
+
+    /// Look ahead at the next codepoint without advancing the iterator.
+    /// If no codepoints exist, then returns null.
+    pub fn peekCodepoint(it: *Wtf8Iterator) ?u21 {
+        const original_i = it.i;
+        defer it.i = original_i;
+
+        return it.nextCodepoint();
     }
 };
 

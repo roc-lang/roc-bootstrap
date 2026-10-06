@@ -19,17 +19,26 @@ It will just vendor and build the deps for compiling Roc.
 This repository copies sources from upstream. Patches listed below. Use git
 to find and inspect the patch diffs.
 
- * LLVM, LLD, Clang 21.1.0
+ * LLVM, LLD, Clang 22.1.8
  * Binaryen 130
  * zlib 1.3.1
  * zstd 1.5.2
- * zig 0.16.0
+ * Zig 0.17.0
 
 For other versions, check the git tags of this repository.
 
 ### Patches
 
+The Zig 0.17.0 bootstrap archive already carries the generic LLVM, Clang, LLD,
+and zlib packaging changes below. Roc retains four additional LLVM scaling
+patches and the Binaryen exclusions. Their upstream status and import checksum
+are recorded in [llvm/ROC_PATCHES.md](llvm/ROC_PATCHES.md).
+
  * all: Deleted unused files.
+ * LLVM: Skip sorted regmask positions outside live segments.
+ * LLVM: Bound address insertion-point searches by both the block and use list.
+ * LLVM: Clear and schedule only blocks touched by the current SLP tree.
+ * LLVM: Move the smaller call-site instruction range when splitting for inlining.
  * LLVM: Support .lib extension for static zstd.
  * LLVM: Don't pass -static when building executables.
  * LLVM: OpenBSD `llvm-config` logic
@@ -43,14 +52,15 @@ For other versions, check the git tags of this repository.
  * LLD: OpenBSD `findMajMinShlib()` logic
  * Binaryen: Disable LLVM DWARF support.
  * Binaryen: Disable the outlining pass and its LLVM suffix-tree dependency.
+ * Zig: Retain explicit dynamic-linker argument bytes in the build maker's argv arena.
  * zlib: Delete the ability to build a shared library.
 
 ## Host System Dependencies
 
- * C++ compiler capable of building LLVM, Clang, and LLD from source (GCC 5.1+
-   or Clang)
+ * C++17 compiler capable of building LLVM, Clang, and LLD from source (GCC 8+
+   or Clang 10+; the build uses `-ffile-prefix-map` for reproducible paths)
      * On some systems, static libstdc++/libc++ may need to be installed
- * CMake 3.19 or later
+ * CMake 3.20 or later
  * make, ninja, or any other build system supported by CMake
  * POSIX system (bash, mkdir, cd)
  * Python 3
@@ -75,11 +85,52 @@ significantly affect how long it takes to build:
 
  * `CMAKE_GENERATOR` can be used to select a different generator instead of the
    default. For example, `CMAKE_GENERATOR=Ninja`.
- * `CMAKE_BUILD_PARALLEL_LEVEL` can be used to introduce parallelism to build
-   systems (such as make) which do not default to parallel builds. This option
-   is irrelevant when using Ninja.
+ * `BOOTSTRAP_JOBS` sets the stage build concurrency. If unset, stages use
+   `CMAKE_BUILD_PARALLEL_LEVEL`, then default to two jobs. This applies to Ninja
+   as well as Make. The Nix development shell defaults to four jobs; Nix package
+   builds use at most four jobs and restrict target-stage CPU affinity.
 
-When it succeeds, output can be found in `out/zig-<target>-<cpu>/`.
+When it succeeds, the dependency bundle is in `out/<target>-<cpu>/`.
+
+### Reproducible Nix builds
+
+The flake pins the build tools and builds without network access inside the
+Nix sandbox. Linux builders on `x86_64-linux` and `aarch64-linux` can build all
+eight release targets:
+
+```sh
+nix build .#release-x86_64-linux-musl
+nix build .#deps-aarch64-macos-none
+nix develop
+```
+
+`release-<target>` produces a normalized archive with `include/`, `lib/`, and
+`roc-deps-build.json` at its root. The target appears in the filename and
+metadata. This layout supports Zig 0.17's hashed package cache, including
+standalone fetch followed by a consumer build. `deps-<target>` exposes its
+`include/` and `lib/` directly. The default
+package is the builder architecture's Linux musl dependency bundle. `release`
+builds all eight archives. Each bundle includes `roc-deps-build.json` describing
+its source revision, component versions, target, baseline CPU, builder, and
+flake lock. CI releases require a clean committed source tree.
+
+Native LLVM, host Zig, zlib, zstd, target LLVM/LLD, and Binaryen are separate
+derivations. Edits to documentation and release metadata reuse compiled stages;
+Binaryen edits reuse LLVM and host Zig. Each stage has a private writable Zig
+cache, and the default compile concurrency is bounded. The `host-tools` package
+contains the installed tools and Zig library tree needed for cross compilation.
+
+The [release workflow](.github/workflows/release-roc-deps.yml) transfers the
+complete host-tools runtime closure to target jobs, validates all eight bundles,
+checks an x86_64 Linux rebuild, and signs SLSA build-provenance attestations.
+It creates a draft only after those checks pass. See
+[the upgrade validation record](docs/zig-0.17-upgrade.md) for the local checks
+and release sequence, including provenance verification.
+
+Routine builds and CI use the locked Nix inputs and content hashes. Roc verifies
+its pinned Zig package hashes when fetching dependency bundles. Attestation API
+checks run only during release publication or an explicitly requested provenance
+audit; local builds and cache checks do not require a GitHub token.
 
 ## Windows Build Instructions
 
@@ -242,3 +293,21 @@ is more portable across Linux distributions.
 | `thumb-windows-gnu`   | OK     |
 | `x86-windows-gnu`     | OK     |
 | `x86_64-windows-gnu`  | OK     |
+
+### LLVM scaling regression tests
+
+The regression inputs for the local scaling patches are retained under
+`llvm/test/Transforms/Inline/` and `llvm/unittests/CodeGen/LiveRangeTest.cpp`.
+To test them with LLVM's upstream harness, use the complete LLVM 22.1.8 source
+release: copy the patched `InlineFunction.cpp`, `SLPVectorizer.cpp`,
+`CodeGenPrepare.cpp`, and `LiveInterval.cpp` into their corresponding source
+paths, copy the regression inputs, and add `LiveRangeTest.cpp` to the
+`CodeGenTests` sources in `llvm/unittests/CodeGen/CMakeLists.txt`.
+
+Build with assertions enabled and the X86 target, then run `CodeGenTests`,
+`IRTests`, `UtilsTests`, and `VectorizeTests`, plus `llvm-lit` over
+`Transforms/Inline`, `Transforms/SLPVectorizer`, `Transforms/CodeGenPrepare`,
+and `DebugInfo/Generic`. The live-range test exhaustively compares sorted slot
+queries against direct segment membership, including empty inputs and holes.
+The inlining test checks both split directions, block addresses, and self-loop
+and successor PHI edges with LLVM's verifier.

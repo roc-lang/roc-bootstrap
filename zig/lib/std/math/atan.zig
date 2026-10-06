@@ -11,6 +11,7 @@
 // https://github.com/ARM-software/optimized-routines/blob/master/math/aarch64/advsimd/atanf.c
 // https://github.com/ARM-software/optimized-routines/blob/master/math/aarch64/advsimd/atan.c
 
+const builtin = @import("builtin");
 const std = @import("../std.zig");
 const math = std.math;
 const mem = std.mem;

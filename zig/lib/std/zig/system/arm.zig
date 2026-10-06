@@ -21,7 +21,7 @@ pub const cpu_models = struct {
     };
 
     // implementer = 0x41
-    const ARM = [_]E{
+    const Arm = [_]E{
         E{ .part = 0x926, .m32 = &A32.arm926ej_s },
         E{ .part = 0xb02, .m32 = &A32.mpcore },
         E{ .part = 0xb36, .m32 = &A32.arm1136j_s },
@@ -88,8 +88,12 @@ pub const cpu_models = struct {
         E{ .part = 0xd87, .m64 = &A64.cortex_a725 },
         E{ .part = 0xd88, .m64 = &A64.cortex_a520ae },
         E{ .part = 0xd89, .m64 = &A64.cortex_a720ae },
+        E{ .part = 0xd8a, .m64 = &A64.c1_nano },
+        E{ .part = 0xd8b, .m64 = &A64.c1_pro },
+        E{ .part = 0xd8c, .m64 = &A64.c1_ultra },
         E{ .part = 0xd8e, .m64 = &A64.neoverse_n3 },
         E{ .part = 0xd8f, .m64 = &A64.cortex_a320 },
+        E{ .part = 0xd90, .m64 = &A64.c1_premium },
     };
     // implementer = 0x42
     const Broadcom = [_]E{
@@ -102,10 +106,17 @@ pub const cpu_models = struct {
         E{ .part = 0x0a3, .m64 = &A64.thunderxt83 },
         E{ .part = 0x0a1, .m64 = &A64.thunderxt88 },
         E{ .part = 0x0af, .m64 = &A64.thunderx2t99 },
+        E{ .part = 0x0b0, .m64 = &A64.cortex_a57 },
+        E{ .part = 0x0b1, .m64 = &A64.cortex_a57 },
+        E{ .part = 0x0b2, .m64 = &A64.cortex_a57 },
+        E{ .part = 0x0b3, .m64 = &A64.cortex_a57 },
+        E{ .part = 0x0b4, .m64 = &A64.cortex_a57 },
+        E{ .part = 0x0b5, .m64 = &A64.cortex_a57 },
     };
     // implementer = 0x46
     const Fujitsu = [_]E{
         E{ .part = 0x001, .m64 = &A64.a64fx },
+        E{ .part = 0x003, .m64 = &A64.fujitsu_monaka },
     };
     // implementer = 0x48
     const HiSilicon = [_]E{
@@ -137,8 +148,14 @@ pub const cpu_models = struct {
         E{ .part = 0xc00, .m64 = &A64.falkor },
         E{ .part = 0xc01, .m64 = &A64.saphira },
     };
+    // implementer = 0x53
+    const Samsung = [_]E{
+        E{ .part = 0x000, .m64 = &A64.exynos_m1 },
+    };
     // implementer = 0x61
     const Apple = [_]E{
+        E{ .part = 0x020, .m64 = &A64.apple_m1 },
+        E{ .part = 0x021, .m64 = &A64.apple_m1 },
         E{ .part = 0x022, .m64 = &A64.apple_m1 },
         E{ .part = 0x023, .m64 = &A64.apple_m1 },
         E{ .part = 0x024, .m64 = &A64.apple_m1 },
@@ -151,11 +168,43 @@ pub const cpu_models = struct {
         E{ .part = 0x035, .m64 = &A64.apple_m2 },
         E{ .part = 0x038, .m64 = &A64.apple_m2 },
         E{ .part = 0x039, .m64 = &A64.apple_m2 },
+        E{ .part = 0x042, .m64 = &A64.apple_m3 },
+        E{ .part = 0x043, .m64 = &A64.apple_m3 },
+        E{ .part = 0x044, .m64 = &A64.apple_m3 },
+        E{ .part = 0x045, .m64 = &A64.apple_m3 },
+        E{ .part = 0x048, .m64 = &A64.apple_m3 },
+        E{ .part = 0x049, .m64 = &A64.apple_m3 },
+        E{ .part = 0x052, .m64 = &A64.apple_m4 },
+        E{ .part = 0x053, .m64 = &A64.apple_m4 },
+        E{ .part = 0x054, .m64 = &A64.apple_m4 },
+        E{ .part = 0x055, .m64 = &A64.apple_m4 },
+        E{ .part = 0x058, .m64 = &A64.apple_m4 },
+        E{ .part = 0x059, .m64 = &A64.apple_m4 },
+    };
+    // implementer = 0x63
+    const ArmChina = [_]E{
+        E{ .part = 0x132, .m32 = &A32.star_mc1 },
+        E{ .part = 0xd25, .m32 = &A32.star_mc3 },
+    };
+    // implementer = 0x68
+    const Hxt = [_]E{
+        E{ .part = 0x000, .m64 = &A64.cortex_a57 },
+    };
+    // implementer = 0x6d
+    const Microsoft = [_]E{
+        E{ .part = 0xd49, .m64 = &A64.neoverse_n2 },
+    };
+    // implementer = 0xC0
+    const AmpereOne = [_]E{
+        E{ .part = 0xac3, .m64 = &A64.ampere1 },
+        E{ .part = 0xac4, .m64 = &A64.ampere1a },
+        E{ .part = 0xac5, .m64 = &A64.ampere1b },
+        E{ .part = 0xac7, .m64 = &A64.ampere1c },
     };
 
     pub fn isKnown(core: CoreInfo, is_64bit: bool) ?*const Target.Cpu.Model {
         const models = switch (core.implementer) {
-            0x41 => &ARM,
+            0x41 => &Arm,
             0x42 => &Broadcom,
             0x43 => &Cavium,
             0x46 => &Fujitsu,
@@ -163,7 +212,12 @@ pub const cpu_models = struct {
             0x4e => &Nvidia,
             0x50 => &Ampere,
             0x51 => &Qualcomm,
+            0x53 => &Samsung,
             0x61 => &Apple,
+            0x63 => &ArmChina,
+            0x68 => &Hxt,
+            0x6d => &Microsoft,
+            0xC0 => &AmpereOne,
             else => return null,
         };
 
@@ -179,13 +233,17 @@ pub const cpu_models = struct {
 
 pub const aarch64 = struct {
     fn setFeature(cpu: *Target.Cpu, feature: Target.aarch64.Feature, enabled: bool) void {
-        const idx = @as(Target.Cpu.Feature.Set.Index, @intFromEnum(feature));
+        const idx = @as(Target.Cpu.Feature.Set.Index, @backingInt(feature));
 
         if (enabled) cpu.features.addFeature(idx) else cpu.features.removeFeature(idx);
     }
 
     inline fn bitField(input: u64, offset: u6) u4 {
         return @as(u4, @truncate(input >> offset));
+    }
+
+    inline fn signedBitField(input: u64, offset: u6) i4 {
+        return @as(i4, @bitCast(@as(u4, @truncate(input >> offset))));
     }
 
     /// Input array should consist of readouts from 12 system registers such that:
@@ -201,18 +259,49 @@ pub const aarch64 = struct {
     /// 9  -> ID_AA64MMFR0_EL1
     /// 10 -> ID_AA64MMFR1_EL1
     /// 11 -> ID_AA64MMFR2_EL1
-    pub fn detectNativeCpuAndFeatures(arch: Target.Cpu.Arch, registers: [12]u64) ?Target.Cpu {
+    pub fn detectNativeCpuAndFeatures(arch: Target.Cpu.Arch, registers: [12]u64) Target.Cpu {
         const info = detectNativeCoreInfo(registers[0]);
-        const model = cpu_models.isKnown(info, true) orelse return null;
+        const model = cpu_models.isKnown(info, true) orelse Target.Cpu.Model.generic(arch);
 
         var cpu = Target.Cpu{
             .arch = arch,
             .model = model,
-            .features = Target.Cpu.Feature.Set.empty,
+            .features = .empty,
         };
 
+        cpu.features.addFeatureSet(model.features);
+
         detectNativeCpuFeatures(&cpu, registers[1..12]);
-        addInstructionFusions(&cpu, info);
+        addInstructionFusions(&cpu);
+
+        cpu.features.populateDependencies(cpu.arch.allFeaturesList());
+
+        return cpu;
+    }
+
+    /// Input array should consist of readouts from 12 system registers such that:
+    /// 0  -> ID_AA64PFR0_EL1
+    /// 1  -> ID_AA64PFR1_EL1
+    /// 2  -> ID_AA64DFR0_EL1
+    /// 3  -> ID_AA64DFR1_EL1
+    /// 4  -> ID_AA64AFR0_EL1
+    /// 5  -> ID_AA64AFR1_EL1
+    /// 6  -> ID_AA64ISAR0_EL1
+    /// 7  -> ID_AA64ISAR1_EL1
+    /// 8  -> ID_AA64MMFR0_EL1
+    /// 9 -> ID_AA64MMFR1_EL1
+    /// 10 -> ID_AA64MMFR2_EL1
+    pub fn detectNativeFeatures(arch: Target.Cpu.Arch, model: *const Target.Cpu.Model, registers: [11]u64) Target.Cpu {
+        var cpu: Target.Cpu = .{
+            .arch = arch,
+            .model = model,
+            .features = model.features,
+        };
+
+        detectNativeCpuFeatures(&cpu, registers[0..]);
+        addInstructionFusions(&cpu);
+
+        cpu.features.populateDependencies(cpu.arch.allFeaturesList());
 
         return cpu;
     }
@@ -264,14 +353,9 @@ pub const aarch64 = struct {
         setFeature(cpu, .sve, bitField(registers[0], 32) >= 1);
         setFeature(cpu, .el3, bitField(registers[0], 12) >= 1);
         setFeature(cpu, .ras, bitField(registers[0], 28) >= 1);
-
-        if (bitField(registers[0], 20) < 0xF) blk: {
-            if (bitField(registers[0], 16) != bitField(registers[0], 20)) break :blk; // This should never occur
-
-            setFeature(cpu, .neon, true);
-            setFeature(cpu, .fp_armv8, true);
-            setFeature(cpu, .fullfp16, bitField(registers[0], 20) > 0);
-        }
+        setFeature(cpu, .fp_armv8, signedBitField(registers[0], 16) >= 0);
+        setFeature(cpu, .neon, signedBitField(registers[0], 20) >= 0);
+        setFeature(cpu, .fullfp16, signedBitField(registers[0], 16) >= 1 and signedBitField(registers[0], 20) >= 1);
 
         // ID_AA64PFR1_EL1
         setFeature(cpu, .mpam, bitField(registers[1], 16) > 0 and bitField(registers[0], 40) == 0); // MPAM v0.1
@@ -282,7 +366,7 @@ pub const aarch64 = struct {
         // ID_AA64DFR0_EL1
         setFeature(cpu, .tracev8_4, bitField(registers[2], 40) >= 1);
         setFeature(cpu, .spe, bitField(registers[2], 32) >= 1);
-        setFeature(cpu, .perfmon, bitField(registers[2], 8) >= 1 and bitField(registers[2], 8) < 0xF);
+        setFeature(cpu, .perfmon, signedBitField(registers[2], 8) >= 1);
 
         // ID_AA64DFR1_EL1 reserved
         // ID_AA64AFR0_EL1 reserved / implementation defined
@@ -333,17 +417,14 @@ pub const aarch64 = struct {
         setFeature(cpu, .uaops, bitField(registers[10], 4) >= 1);
     }
 
-    fn addInstructionFusions(cpu: *Target.Cpu, info: CoreInfo) void {
-        switch (info.implementer) {
-            0x41 => switch (info.part) {
-                0xd4b, 0xd4c => {
-                    // According to A78C/X1C Core Software Optimization Guide, CPU fuses certain instructions.
-                    setFeature(cpu, .cmp_bcc_fusion, true);
-                    setFeature(cpu, .fuse_aes, true);
-                },
-                else => {},
-            },
-            else => {},
+    fn addInstructionFusions(cpu: *Target.Cpu) void {
+        const m = cpu.model;
+        const c = Target.aarch64.cpu;
+
+        if (m == &c.cortex_a78c or m == &c.cortex_x1c) {
+            // According to A78C/X1C Core Software Optimization Guide, CPU fuses certain instructions.
+            setFeature(cpu, .cmp_bcc_fusion, true);
+            setFeature(cpu, .fuse_aes, true);
         }
     }
 };

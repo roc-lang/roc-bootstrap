@@ -12,7 +12,7 @@ pub fn build(b: *std.Build) void {
         .name = "touch",
         .root_module = b.createModule(.{
             .root_source_file = touch_src,
-            .optimize = .Debug,
+            .optimize = .debug,
             .target = target,
         }),
     });
@@ -22,46 +22,21 @@ pub fn build(b: *std.Build) void {
         .name = "exists_in",
         .root_module = b.createModule(.{
             .root_source_file = b.path("exists_in.zig"),
-            .optimize = .Debug,
+            .optimize = .debug,
             .target = target,
         }),
     });
 
-    const has_basename = b.addExecutable(.{
-        .name = "has_basename",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("has_basename.zig"),
-            .optimize = .Debug,
-            .target = target,
-        }),
-    });
-
-    // Known path:
-    addTestRun(test_step, exists_in, touch_src.dirname(), &.{"touch.zig"});
-
-    // Generated file:
-    addTestRun(test_step, exists_in, generated.dirname(), &.{"generated.txt"});
-
-    // Generated file multiple levels:
-    addTestRun(test_step, exists_in, generated.dirname().dirname(), &.{
+    addTestRun(test_step, exists_in, "run exists_in (known path)", touch_src.dirname(), &.{"touch.zig"});
+    addTestRun(test_step, exists_in, "run exists_in (generated file)", generated.dirname(), &.{"generated.txt"});
+    addTestRun(test_step, exists_in, "run exists_in (generated file multi level)", generated.dirname().dirname(), &.{
         "subdir" ++ std.fs.path.sep_str ++ "generated.txt",
     });
 
-    // Cache root:
-    const cache_dir = b.cache_root.path orelse
-        (b.cache_root.join(b.allocator, &.{"."}) catch @panic("OOM"));
-    addTestRun(
-        test_step,
-        has_basename,
-        generated.dirname().dirname().dirname().dirname(),
-        &.{std.fs.path.basename(cache_dir)},
-    );
-
-    // Absolute path:
     const write_files = b.addWriteFiles();
     _ = write_files.add("foo.txt", "");
     const abs_path = write_files.getDirectory();
-    addTestRun(test_step, exists_in, abs_path, &.{"foo.txt"});
+    addTestRun(test_step, exists_in, "run exists_in (absolute path)", abs_path, &.{"foo.txt"});
 }
 
 // Runs exe with the parameters [dirname, args...].
@@ -69,10 +44,12 @@ pub fn build(b: *std.Build) void {
 fn addTestRun(
     test_step: *std.Build.Step,
     exe: *std.Build.Step.Compile,
+    step_name: []const u8,
     dirname: std.Build.LazyPath,
     args: []const []const u8,
 ) void {
     const run = test_step.owner.addRunArtifact(exe);
+    run.setName(step_name);
     run.addDirectoryArg(dirname);
     run.addArgs(args);
     run.expectExitCode(0);

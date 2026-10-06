@@ -77,7 +77,7 @@ pub const PS = struct {
             _,
 
             pub fn construct(num: NUM, thread: bool, input: bool, additive: bool) ULONG_PTR {
-                var val: ULONG_PTR = @intFromEnum(num);
+                var val: ULONG_PTR = @backingInt(num);
                 if (thread) val |= 0x10000;
                 if (input) val |= 0x20000;
                 if (additive) val |= 0x40000;
@@ -144,11 +144,25 @@ pub const OBJECT = struct {
         Session = 5,
         _,
 
-        pub const Max: @typeInfo(@This()).@"enum".tag_type = @typeInfo(@This()).@"enum".fields.len;
+        pub const Max: @typeInfo(@This()).@"enum".tag_type = @typeInfo(@This()).@"enum".field_names.len;
+    };
+
+    pub const BASIC_INFORMATION = extern struct {
+        Attributes: ATTRIBUTES.Flags,
+        GrantedAccess: ACCESS_MASK,
+        HandleCount: ULONG,
+        PointerCount: ULONG,
+        Reserved: [10]ULONG,
     };
 
     pub const NAME_INFORMATION = extern struct {
         Name: UNICODE_STRING,
+    };
+
+    pub const HANDLE_FLAG = packed struct(USHORT) {
+        INHERIT: bool = false,
+        PROTECT_FROM_CLOSE: bool = false,
+        Reserved1: u14 = 0,
     };
 };
 
@@ -575,7 +589,7 @@ pub const FILE = struct {
         MupProvider = 83,
         _,
 
-        pub const Maximum: @typeInfo(@This()).@"enum".tag_type = 1 + @typeInfo(@This()).@"enum".fields.len;
+        pub const Maximum: @typeInfo(@This()).@"enum".tag_type = 1 + @typeInfo(@This()).@"enum".field_names.len;
     };
 
     pub const BASIC_INFORMATION = extern struct {
@@ -739,7 +753,7 @@ pub const FILE = struct {
             SYNCHRONOUS_NONALERT = 0b10,
             _,
 
-            pub const VALID_FLAGS: @This() = @enumFromInt(0b11);
+            pub const VALID_FLAGS: @This() = @fromBackingInt(@intCast(0b11));
         },
         /// The file being opened must not be a directory file or this call
         /// fails. The file object being opened can represent a data file, a
@@ -881,7 +895,7 @@ pub const DIRECTORY = struct {
         NotifyFull = 3,
         _,
 
-        pub const Maximum: @typeInfo(@This()).@"enum".tag_type = 1 + @typeInfo(@This()).@"enum".fields.len;
+        pub const Maximum: @typeInfo(@This()).@"enum".tag_type = 1 + @typeInfo(@This()).@"enum".field_names.len;
     };
 };
 
@@ -930,14 +944,8 @@ pub const CONSOLE = struct {
 
                     pub const Tag = @typeInfo(WITH).@"union".tag_type.?;
                     pub const Payload = PAYLOAD: {
-                        const with_fields = @typeInfo(WITH).@"union".fields;
-                        var field_names: [with_fields.len][]const u8 = undefined;
-                        var field_types: [with_fields.len]type = undefined;
-                        for (with_fields, &field_names, &field_types) |field, *field_name, *field_type| {
-                            field_name.* = field.name;
-                            field_type.* = field.type;
-                        }
-                        break :PAYLOAD @Union(.@"extern", null, &field_names, &field_types, &@splat(.{}));
+                        const with_info = @typeInfo(WITH).@"union";
+                        break :PAYLOAD @Union(.@"extern", null, with_info.field_names, with_info.field_types[0..], &@splat(.{}));
                     };
                 };
             };
@@ -1931,19 +1939,6 @@ pub const THREAD = struct {
     };
 };
 
-pub const MEMORY = struct {
-    pub const BASIC_INFORMATION = extern struct {
-        BaseAddress: PVOID,
-        AllocationBase: PVOID,
-        AllocationProtect: DWORD,
-        PartitionId: WORD,
-        RegionSize: SIZE_T,
-        State: DWORD,
-        Protect: DWORD,
-        Type: DWORD,
-    };
-};
-
 // ref: km/ntifs.h
 
 pub const HEAP = opaque {
@@ -1994,7 +1989,7 @@ pub const HEAP = opaque {
             CSR_PORT,
             _,
 
-            pub const MASK: CLASS = @enumFromInt(maxInt(@typeInfo(CLASS).@"enum".tag_type));
+            pub const MASK: CLASS = @fromBackingInt(@intCast(maxInt(@typeInfo(CLASS).@"enum".tag_type)));
         };
 
         pub const CREATE = packed struct(ULONG) {
@@ -2009,7 +2004,7 @@ pub const HEAP = opaque {
             /// Callers are therefore responsible for synchronizing access to hardened heaps.
             HARDENED: bool = false,
             Reserved10: u2 = 0,
-            CLASS: CLASS = @enumFromInt(0),
+            CLASS: CLASS = @fromBackingInt(@intCast(0)),
             /// Create heap with 16 byte alignment (obsolete)
             ALIGN_16: bool = false,
             /// Create heap call tracing enabled (obsolete)
@@ -2054,7 +2049,7 @@ pub const HEAP = opaque {
                     FLAG3: bool = false,
                 } = .{},
             } = .{},
-            CLASS: CLASS = @enumFromInt(0),
+            CLASS: CLASS = @fromBackingInt(@intCast(0)),
             Reserved16: u2 = 0,
             TAG: u12 = 0,
             Reserved30: u2 = 0,
@@ -2122,7 +2117,7 @@ pub const HEAP = opaque {
                     Custom,
                     _,
 
-                    pub const Max: @typeInfo(@This()).@"enum".tag_type = @typeInfo(@This()).@"enum".fields.len;
+                    pub const Max: @typeInfo(@This()).@"enum".tag_type = @typeInfo(@This()).@"enum".field_names.len;
                 };
 
                 pub const VA_CALLBACKS = extern struct {
@@ -3369,7 +3364,7 @@ pub const FS_INFORMATION_CLASS = enum(c_int) {
     Guid = 15,
     _,
 
-    pub const Maximum: @typeInfo(@This()).@"enum".tag_type = 1 + @typeInfo(@This()).@"enum".fields.len;
+    pub const Maximum: @typeInfo(@This()).@"enum".tag_type = 1 + @typeInfo(@This()).@"enum".field_names.len;
 };
 
 pub const SECTION_INHERIT = enum(c_int) {
@@ -3493,7 +3488,7 @@ pub const MEM = struct {
             ImageMachine,
             _,
 
-            pub const Max: @typeInfo(@This()).@"enum".tag_type = @typeInfo(@This()).@"enum".fields.len;
+            pub const Max: @typeInfo(@This()).@"enum".tag_type = @typeInfo(@This()).@"enum".field_names.len;
         };
     };
 };
@@ -3521,6 +3516,39 @@ pub const SEC = packed struct(ULONG) {
 };
 
 pub const ERESOURCE = opaque {};
+
+pub const VIRTUAL_MEMORY = struct {
+    pub const INFORMATION_CLASS = enum(c_int) {
+        Prefetch = 0,
+        PagePriority = 1,
+        CfgCallTarget = 2,
+        PageDirtyState = 3,
+        ImageHotPatch = 4,
+        PhysicalContiguity = 5,
+        VirtualMachinePrepopulate = 6,
+        RemoveFromWorkingSet = 7,
+        _,
+
+        pub const Max: @typeInfo(@This()).@"enum".tag_type = @typeInfo(@This()).@"enum".field_names.len;
+    };
+
+    pub const MEMORY_PREFETCH_INFORMATION = extern struct {
+        Flags: VM_PREFETCH,
+
+        pub const VM_PREFETCH = packed struct(ULONG) {
+            /// Introduced in Windows 11 24H4.
+            /// Attempt to populate specified single or multiple address ranges
+            /// into the process working set (bring pages into physical memory).
+            TO_WORKING_SET: bool,
+            Reserved1: u31 = 0,
+        };
+    };
+};
+
+pub const MEMORY_RANGE_ENTRY = extern struct {
+    VirtualAddress: PVOID,
+    NumberOfBytes: SIZE_T,
+};
 
 // ref: shared/ntdef.h
 
@@ -3664,14 +3692,12 @@ pub fn teb() *TEB {
 }
 
 pub fn peb() *PEB {
-    if (builtin.zig_backend == .stage2_c) switch (native_arch) {
-        .x86, .x86_64 => return @ptrCast(@alignCast(struct {
-            /// This is a workaround for the C backend until zig has the ability to put
-            /// C code in inline assembly.
-            extern fn zig_windows_peb() callconv(.c) *anyopaque;
-        }.zig_windows_peb())),
-        else => {},
-    } else switch (native_arch) {
+    if (builtin.zig_backend == .stage2_c) return @ptrCast(@alignCast(struct {
+        /// This is a workaround for the C backend until zig has the ability to put
+        /// C code in inline assembly.
+        extern fn zig_windows_peb() callconv(.c) *anyopaque;
+    }.zig_windows_peb()));
+    switch (native_arch) {
         .aarch64 => {
             comptime assert(@offsetOf(TEB, "ProcessEnvironmentBlock") == 0x60);
             return asm (
@@ -3964,7 +3990,7 @@ pub fn unexpectedError(err: Win32Error) UnexpectedError {
 pub fn unexpectedStatus(status: NTSTATUS) UnexpectedError {
     if (std.options.unexpected_error_tracing) {
         std.debug.print("error.Unexpected NTSTATUS=0x{x} ({s})\n", .{
-            @intFromEnum(status),
+            @backingInt(status),
             std.enums.tagName(NTSTATUS, status) orelse "<unnamed>",
         });
         std.debug.dumpCurrentStackTrace(.{ .first_address = @returnAddress() });
@@ -3974,8 +4000,8 @@ pub fn unexpectedStatus(status: NTSTATUS) UnexpectedError {
 
 pub fn statusBug(status: NTSTATUS) UnexpectedError {
     switch (builtin.mode) {
-        .Debug => std.debug.panic("programmer bug caused syscall status: 0x{x} ({s})", .{
-            @intFromEnum(status),
+        .debug => std.debug.panic("programmer bug caused syscall status: 0x{x} ({s})", .{
+            @backingInt(status),
             std.enums.tagName(NTSTATUS, status) orelse "<unnamed>",
         }),
         else => return error.Unexpected,
@@ -3984,8 +4010,8 @@ pub fn statusBug(status: NTSTATUS) UnexpectedError {
 
 pub fn errorBug(err: Win32Error) UnexpectedError {
     switch (builtin.mode) {
-        .Debug => std.debug.panic("programmer bug caused syscall error: 0x{x} ({s})", .{
-            @intFromEnum(err),
+        .debug => std.debug.panic("programmer bug caused syscall error: 0x{x} ({s})", .{
+            @backingInt(err),
             std.enums.tagName(Win32Error, err) orelse "<unnamed>",
         }),
         else => return error.Unexpected,
@@ -4110,7 +4136,7 @@ fn Bool(comptime BackingInteger: type) type {
         _,
 
         /// This is not the only truthy value, comparisons against this value are always a bug.
-        pub const TRUE: @This() = @enumFromInt(1);
+        pub const TRUE: @This() = @fromBackingInt(@intCast(1));
 
         pub const Backing = BackingInteger;
 
@@ -4119,7 +4145,7 @@ fn Bool(comptime BackingInteger: type) type {
         }
 
         pub fn fromBool(b: bool) @This() {
-            return @enumFromInt(@intFromBool(b));
+            return @fromBackingInt(@intCast(@intFromBool(b)));
         }
     };
 }
@@ -4195,19 +4221,11 @@ pub const GUID = extern struct {
     Data3: u16,
     Data4: [8]u8,
 
-    const hex_offsets = switch (builtin.target.cpu.arch.endian()) {
-        .big => [16]u6{
-            0,  2,  4,  6,
-            9,  11, 14, 16,
-            19, 21, 24, 26,
-            28, 30, 32, 34,
-        },
-        .little => [16]u6{
-            6,  4,  2,  0,
-            11, 9,  16, 14,
-            19, 21, 24, 26,
-            28, 30, 32, 34,
-        },
+    const hex_offsets: [16]u6 = .{
+        6,  4,  2,  0,
+        11, 9,  16, 14,
+        19, 21, 24, 26,
+        28, 30, 32, 34,
     };
 
     pub fn parse(s: []const u8) GUID {
@@ -4222,12 +4240,21 @@ pub const GUID = extern struct {
         assert(s[13] == '-');
         assert(s[18] == '-');
         assert(s[23] == '-');
-        var bytes: [16]u8 = undefined;
-        for (hex_offsets, 0..) |hex_offset, i| {
-            bytes[i] = (try std.fmt.charToDigit(s[hex_offset], 16)) << 4 |
-                try std.fmt.charToDigit(s[hex_offset + 1], 16);
-        }
-        return @as(GUID, @bitCast(bytes));
+        var raw1: [4]u8 = undefined;
+        var raw2: [2]u8 = undefined;
+        var raw3: [2]u8 = undefined;
+        var raw4: [8]u8 = undefined;
+        assert((try std.fmt.hexToBytes(&raw1, s[0..8])).len == raw1.len);
+        assert((try std.fmt.hexToBytes(&raw2, s[9..13])).len == raw2.len);
+        assert((try std.fmt.hexToBytes(&raw3, s[14..18])).len == raw3.len);
+        assert((try std.fmt.hexToBytes(raw4[0..2], s[19..23])).len == 2);
+        assert((try std.fmt.hexToBytes(raw4[2..8], s[24..36])).len == 6);
+        return .{
+            .Data1 = @byteSwap(@as(u32, @bitCast(raw1))),
+            .Data2 = @byteSwap(@as(u16, @bitCast(raw2))),
+            .Data3 = @byteSwap(@as(u16, @bitCast(raw3))),
+            .Data4 = raw4,
+        };
     }
 
     pub fn format(self: GUID, w: *std.Io.Writer) std.Io.Writer.Error!void {
@@ -4239,28 +4266,28 @@ pub const GUID = extern struct {
             self.Data4[2..8],
         });
     }
-};
 
-test GUID {
-    try std.testing.expectEqual(
-        GUID{
+    test parse {
+        const expected: GUID = .{
             .Data1 = 0x01234567,
             .Data2 = 0x89ab,
             .Data3 = 0xef10,
             .Data4 = "\x32\x54\x76\x98\xba\xdc\xfe\x91".*,
-        },
-        GUID.parse("{01234567-89AB-EF10-3254-7698badcfe91}"),
-    );
-    try std.testing.expectFmt(
-        "{01234567-89ab-ef10-3254-7698badcfe91}",
-        "{f}",
-        .{GUID.parse("{01234567-89AB-EF10-3254-7698badcfe91}")},
-    );
-    try std.testing.expectFmt(
-        "{00000001-0001-0001-0001-000000000001}",
-        "{f}",
-        .{GUID{ .Data1 = 1, .Data2 = 1, .Data3 = 1, .Data4 = [_]u8{ 0, 1, 0, 0, 0, 0, 0, 1 } }},
-    );
+        };
+        try std.testing.expectEqual(expected, GUID.parse("{01234567-89AB-EF10-3254-7698badcfe91}"));
+    }
+
+    test format {
+        const guid0: GUID = .{ .Data1 = 1, .Data2 = 1, .Data3 = 1, .Data4 = .{ 0, 1, 0, 0, 0, 0, 0, 1 } };
+        try std.testing.expectFmt("{00000001-0001-0001-0001-000000000001}", "{f}", .{guid0});
+
+        const guid1: GUID = .parse("{01234567-89AB-EF10-3254-7698badcfe91}");
+        try std.testing.expectFmt("{01234567-89ab-ef10-3254-7698badcfe91}", "{f}", .{guid1});
+    }
+};
+
+test {
+    _ = GUID;
 }
 
 pub const COORD = extern struct {
@@ -4467,7 +4494,7 @@ pub const KEY = struct {
             Layer = 5,
             _,
 
-            pub const Max: @typeInfo(@This()).@"enum".tag_type = @typeInfo(@This()).@"enum".fields.len;
+            pub const Max: @typeInfo(@This()).@"enum".tag_type = @typeInfo(@This()).@"enum".field_names.len;
         };
 
         pub const PARTIAL_INFORMATION = extern struct {
@@ -5001,8 +5028,8 @@ pub const KAFFINITY = usize;
 pub const KPRIORITY = i32;
 
 pub const CLIENT_ID = extern struct {
-    UniqueProcess: HANDLE,
-    UniqueThread: HANDLE,
+    UniqueProcess: ?HANDLE,
+    UniqueThread: ?HANDLE,
 };
 
 pub const TEB = extern struct {
@@ -5024,7 +5051,7 @@ pub const TEB = extern struct {
 };
 
 comptime {
-    // XXX: Without this check we cannot use `std.Io.Writer` on 16-bit platforms. `std.fmt.bufPrint` will hit the unreachable in `PEB.GdiHandleBuffer` without this guard.
+    // XXX: Without this check we cannot use `std.Io.Writer` on 16-bit platforms. `std.mem.print` will hit the unreachable in `PEB.GdiHandleBuffer` without this guard.
     if (builtin.os.tag == .windows) {
         // Offsets taken from WinDbg info and Geoff Chappell[1] (RIP)
         // [1]: https://www.geoffchappell.com/studies/windows/km/ntoskrnl/inc/api/pebteb/teb/index.htm
@@ -5665,7 +5692,136 @@ pub const PF = enum(DWORD) {
     ARM_V83_JSCVT_INSTRUCTIONS_AVAILABLE = 44,
 
     /// This Arm processor implements the Arm v8.3 LRCPC instructions (for example, LDAPR). Note that certain Arm v8.2 CPUs may optionally support the LRCPC instructions.
-    ARM_V83_LRCPC_INSTRUCTIONS_AVAILABLE,
+    ARM_V83_LRCPC_INSTRUCTIONS_AVAILABLE = 45,
+
+    /// This Arm processor implements the SVE (Scalable Vector Extension) instructions (FEAT_SVE).
+    ARM_SVE_INSTRUCTIONS_AVAILABLE = 46,
+
+    /// This Arm processor implements the SVE2 instructions (FEAT_SVE2).
+    ARM_SVE2_INSTRUCTIONS_AVAILABLE = 47,
+
+    /// This Arm processor implements the SVE2.1 instructions (FEAT_SVE2p1).
+    ARM_SVE2_1_INSTRUCTIONS_AVAILABLE = 48,
+
+    /// This Arm processor implements the SVE AES instructions (FEAT_SVE_AES).
+    ARM_SVE_AES_INSTRUCTIONS_AVAILABLE = 49,
+
+    /// This Arm processor implements the SVE 128-bit polynomial multiply long instructions (FEAT_SVE_PMULL128).
+    ARM_SVE_PMULL128_INSTRUCTIONS_AVAILABLE = 50,
+
+    /// This Arm processor implements the SVE bit permute instructions (FEAT_SVE_BitPerm).
+    ARM_SVE_BITPERM_INSTRUCTIONS_AVAILABLE = 51,
+
+    /// This Arm processor implements the SVE BF16 (BFloat16) instructions (FEAT_BF16).
+    ARM_SVE_BF16_INSTRUCTIONS_AVAILABLE = 52,
+
+    /// This Arm processor implements the SVE EBF16 (Extended BFloat16) instructions (FEAT_EBF16).
+    ARM_SVE_EBF16_INSTRUCTIONS_AVAILABLE = 53,
+
+    /// This Arm processor implements the SVE B16B16 instructions (FEAT_SVE_B16B16).
+    ARM_SVE_B16B16_INSTRUCTIONS_AVAILABLE = 54,
+
+    /// This Arm processor implements the SVE SHA-3 cryptographic instructions (FEAT_SVE_SHA3).
+    ARM_SVE_SHA3_INSTRUCTIONS_AVAILABLE = 55,
+
+    /// This Arm processor implements the SVE SM4 cryptographic instructions (FEAT_SVE_SM4).
+    ARM_SVE_SM4_INSTRUCTIONS_AVAILABLE = 56,
+
+    /// This Arm processor implements the SVE I8MM (Int8 matrix multiply) instructions (FEAT_I8MM).
+    ARM_SVE_I8MM_INSTRUCTIONS_AVAILABLE = 57,
+
+    /// This Arm processor implements the SVE F32MM (FP32 matrix multiply) instructions (FEAT_F32MM).
+    ARM_SVE_F32MM_INSTRUCTIONS_AVAILABLE = 58,
+
+    /// This Arm processor implements the SVE F64MM (FP64 matrix multiply) instructions (FEAT_F64MM).
+    ARM_SVE_F64MM_INSTRUCTIONS_AVAILABLE = 59,
+
+    /// This x64 processor implements the BMI2 instruction set.
+    BMI2_INSTRUCTIONS_AVAILABLE = 60,
+
+    /// This x64 processor implements the MOVDIR64B instruction.
+    MOVDIR64B_INSTRUCTION_AVAILABLE = 61,
+
+    /// This Arm processor implements the LSE2 atomic instructions (FEAT_LSE2).
+    ARM_LSE2_AVAILABLE = 62,
+
+    /// This Arm processor implements the SHA-3 cryptographic instructions (FEAT_SHA3).
+    ARM_SHA3_INSTRUCTIONS_AVAILABLE = 64,
+
+    /// This Arm processor implements the SHA-512 cryptographic instructions (FEAT_SHA512).
+    ARM_SHA512_INSTRUCTIONS_AVAILABLE = 65,
+
+    /// This Arm processor implements the I8MM (Int8 matrix multiply) NEON instructions (FEAT_I8MM).
+    ARM_V82_I8MM_INSTRUCTIONS_AVAILABLE = 66,
+
+    /// This Arm processor implements the FP16 (half-precision floating point) NEON instructions (FEAT_FP16).
+    ARM_V82_FP16_INSTRUCTIONS_AVAILABLE = 67,
+
+    /// This Arm processor implements the BF16 (BFloat16) NEON instructions (FEAT_BF16).
+    ARM_V86_BF16_INSTRUCTIONS_AVAILABLE = 68,
+
+    /// This Arm processor implements the EBF16 (Extended BFloat16) NEON instructions (FEAT_EBF16).
+    ARM_V86_EBF16_INSTRUCTIONS_AVAILABLE = 69,
+
+    /// This Arm processor implements the SME (Scalable Matrix Extension) instructions (FEAT_SME).
+    ARM_SME_INSTRUCTIONS_AVAILABLE = 70,
+
+    /// This Arm processor implements the SME2 instructions (FEAT_SME2).
+    ARM_SME2_INSTRUCTIONS_AVAILABLE = 71,
+
+    /// This Arm processor implements the SME2.1 instructions (FEAT_SME2p1).
+    ARM_SME2_1_INSTRUCTIONS_AVAILABLE = 72,
+
+    /// This Arm processor implements the SME2.2 instructions (FEAT_SME2p2).
+    ARM_SME2_2_INSTRUCTIONS_AVAILABLE = 73,
+
+    /// This Arm processor implements the SVE AES instructions when in Streaming SVE mode (FEAT_SSVE_AES).
+    ARM_SME_AES_INSTRUCTIONS_AVAILABLE = 74,
+
+    /// This Arm processor implements the SVE bit permute instructions when in Streaming SVE mode (FEAT_SSVE_BitPerm).
+    ARM_SME_SBITPERM_INSTRUCTIONS_AVAILABLE = 75,
+
+    /// This Arm processor implements the SVE FMMLA (widening, 4-way, FP8 to FP16) instruction when in Streaming SVE mode (FEAT_SSVE_F8F16MM).
+    ARM_SME_SF8MM4_INSTRUCTIONS_AVAILABLE = 76,
+
+    /// This Arm processor implements the SVE FMMLA (widening, 8-way, FP8 to FP32) instruction when in Streaming SVE mode (FEAT_SSVE_F8F32MM).
+    ARM_SME_SF8MM8_INSTRUCTIONS_AVAILABLE = 77,
+
+    /// This Arm processor implements the SVE2 FP8DOT2 instructions when in Streaming SVE mode (FEAT_SSVE_FP8DOT2).
+    ARM_SME_SF8DP2_INSTRUCTIONS_AVAILABLE = 78,
+
+    /// This Arm processor implements the SVE2 FP8DOT4 instructions when in Streaming SVE mode (FEAT_SSVE_FP8DOT4).
+    ARM_SME_SF8DP4_INSTRUCTIONS_AVAILABLE = 79,
+
+    /// This Arm processor implements the SVE2 FP8FMA instructions when in Streaming SVE mode (FEAT_SSVE_FP8FMA).
+    ARM_SME_SF8FMA_INSTRUCTIONS_AVAILABLE = 80,
+
+    /// This Arm processor implements the SME F8F32 instructions (FEAT_SME_F8F32).
+    ARM_SME_F8F32_INSTRUCTIONS_AVAILABLE = 81,
+
+    /// This Arm processor implements the SME F8F16 instructions (FEAT_SME_F8F16).
+    ARM_SME_F8F16_INSTRUCTIONS_AVAILABLE = 82,
+
+    /// This Arm processor implements the SME F16F16 instructions (FEAT_SME_F16F16).
+    ARM_SME_F16F16_INSTRUCTIONS_AVAILABLE = 83,
+
+    /// This Arm processor implements the SME B16B16 instructions (FEAT_SME_B16B16).
+    ARM_SME_B16B16_INSTRUCTIONS_AVAILABLE = 84,
+
+    /// This Arm processor implements the SME F64F64 instructions (FEAT_SME_F64F64).
+    ARM_SME_F64F64_INSTRUCTIONS_AVAILABLE = 85,
+
+    /// This Arm processor implements the SME I16I64 instructions (FEAT_SME_I16I64).
+    ARM_SME_I16I64_INSTRUCTIONS_AVAILABLE = 86,
+
+    /// This Arm processor implements the SME LUTv2 instructions (FEAT_SME_LUTv2).
+    ARM_SME_LUTv2_INSTRUCTIONS_AVAILABLE = 87,
+
+    /// This Arm processor implements SME FA64 (Full AArch64 instruction set when in Streaming SVE mode) (FEAT_SME_FA64).
+    ARM_SME_FA64_INSTRUCTIONS_AVAILABLE = 88,
+
+    /// This x64 processor implements the UMONITOR instruction.
+    UMONITOR_INSTRUCTION_AVAILABLE = 89,
 };
 
 pub const MAX_WOW64_SHARED_ENTRIES = 16;
@@ -5836,8 +5992,8 @@ pub const KUSER_SHARED_DATA = extern struct {
 pub const SharedUserData: *const KUSER_SHARED_DATA = @ptrFromInt(0x7FFE0000);
 
 pub fn IsProcessorFeaturePresent(feature: PF) bool {
-    if (@intFromEnum(feature) >= PROCESSOR_FEATURE_MAX) return false;
-    return SharedUserData.ProcessorFeatures[@intFromEnum(feature)].toBool();
+    if (@backingInt(feature) >= PROCESSOR_FEATURE_MAX) return false;
+    return SharedUserData.ProcessorFeatures[@backingInt(feature)].toBool();
 }
 
 // https://github.com/reactos/reactos/blob/master/sdk/include/ndk/pstypes.h#L977-L983

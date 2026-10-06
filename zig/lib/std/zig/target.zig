@@ -46,6 +46,8 @@ pub const available_libcs = [_]ArchOsAbi{
     .{ .arch = .csky, .os = .linux, .abi = .gnueabi, .os_ver = .{ .major = 4, .minor = 20, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 29, .patch = 0 }, .glibc_triple = "csky-linux-gnuabiv2-soft" },
     .{ .arch = .csky, .os = .linux, .abi = .gnueabihf, .os_ver = .{ .major = 4, .minor = 20, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 29, .patch = 0 }, .glibc_triple = "csky-linux-gnuabiv2" },
     .{ .arch = .hexagon, .os = .linux, .abi = .musl, .os_ver = .{ .major = 3, .minor = 2, .patch = 102 } },
+    .{ .arch = .loongarch32, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 6, .minor = 19, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 44, .patch = 0 }, .glibc_triple = "loongarch32-linux-gnuf64" },
+    .{ .arch = .loongarch32, .os = .linux, .abi = .gnusf, .os_ver = .{ .major = 6, .minor = 19, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 44, .patch = 0 }, .glibc_triple = "loongarch32-linux-gnusf" },
     .{ .arch = .loongarch64, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 5, .minor = 19, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 36, .patch = 0 }, .glibc_triple = "loongarch64-linux-gnuf64" },
     .{ .arch = .loongarch64, .os = .linux, .abi = .gnusf, .os_ver = .{ .major = 5, .minor = 19, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 36, .patch = 0 }, .glibc_triple = "loongarch64-linux-gnusf" },
     .{ .arch = .loongarch64, .os = .linux, .abi = .musl, .os_ver = .{ .major = 5, .minor = 19, .patch = 0 } },
@@ -76,15 +78,11 @@ pub const available_libcs = [_]ArchOsAbi{
     .{ .arch = .mips64el, .os = .linux, .abi = .muslabi64, .os_ver = .{ .major = 2, .minor = 3, .patch = 48 } },
     .{ .arch = .mips64el, .os = .linux, .abi = .muslabin32, .os_ver = .{ .major = 2, .minor = 6, .patch = 0 } },
     .{ .arch = .mips64el, .os = .openbsd, .abi = .none, .os_ver = .{ .major = 4, .minor = 7, .patch = 0 } },
-    .{ .arch = .powerpc, .os = .linux, .abi = .gnueabi, .os_ver = .{ .major = 1, .minor = 3, .patch = 45 }, .glibc_triple = "powerpc-linux-gnu-soft" },
-    .{ .arch = .powerpc, .os = .linux, .abi = .gnueabihf, .os_ver = .{ .major = 1, .minor = 3, .patch = 45 }, .glibc_triple = "powerpc-linux-gnu" },
     .{ .arch = .powerpc, .os = .linux, .abi = .musleabi, .os_ver = .{ .major = 1, .minor = 3, .patch = 45 } },
     .{ .arch = .powerpc, .os = .linux, .abi = .musleabihf, .os_ver = .{ .major = 1, .minor = 3, .patch = 45 } },
-    .{ .arch = .powerpc, .os = .netbsd, .abi = .eabi, .os_ver = .{ .major = 6, .minor = 0, .patch = 0 } },
     .{ .arch = .powerpc, .os = .netbsd, .abi = .eabihf, .os_ver = .{ .major = 1, .minor = 4, .patch = 0 } },
     .{ .arch = .powerpc, .os = .openbsd, .abi = .eabihf, .os_ver = .{ .major = 2, .minor = 8, .patch = 0 } },
     .{ .arch = .powerpc64, .os = .freebsd, .abi = .none, .os_ver = .{ .major = 8, .minor = 0, .patch = 0 } },
-    .{ .arch = .powerpc64, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 2, .minor = 6, .patch = 0 } },
     .{ .arch = .powerpc64, .os = .linux, .abi = .musl, .os_ver = .{ .major = 2, .minor = 6, .patch = 0 } },
     .{ .arch = .powerpc64, .os = .openbsd, .abi = .none, .os_ver = .{ .major = 6, .minor = 8, .patch = 0 } },
     .{ .arch = .powerpc64le, .os = .freebsd, .abi = .none, .os_ver = .{ .major = 13, .minor = 0, .patch = 0 } },
@@ -92,9 +90,11 @@ pub const available_libcs = [_]ArchOsAbi{
     .{ .arch = .powerpc64le, .os = .linux, .abi = .musl, .os_ver = .{ .major = 3, .minor = 14, .patch = 0 } },
     .{ .arch = .riscv32, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 4, .minor = 15, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 33, .patch = 0 }, .glibc_triple = "riscv32-linux-gnu-rv32imafdc-ilp32d" },
     .{ .arch = .riscv32, .os = .linux, .abi = .musl, .os_ver = .{ .major = 4, .minor = 15, .patch = 0 } },
+    .{ .arch = .riscv32, .os = .netbsd, .abi = .none, .os_ver = .{ .major = 11, .minor = 0, .patch = 0 } },
     .{ .arch = .riscv64, .os = .freebsd, .abi = .none, .os_ver = .{ .major = 12, .minor = 0, .patch = 0 } },
     .{ .arch = .riscv64, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 4, .minor = 15, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 27, .patch = 0 }, .glibc_triple = "riscv64-linux-gnu-rv64imafdc-lp64d" },
     .{ .arch = .riscv64, .os = .linux, .abi = .musl, .os_ver = .{ .major = 4, .minor = 15, .patch = 0 } },
+    .{ .arch = .riscv64, .os = .netbsd, .abi = .none, .os_ver = .{ .major = 11, .minor = 0, .patch = 0 } },
     .{ .arch = .riscv64, .os = .openbsd, .abi = .none, .os_ver = .{ .major = 7, .minor = 0, .patch = 0 } },
     .{ .arch = .s390x, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 2, .minor = 4, .patch = 2 } },
     .{ .arch = .s390x, .os = .linux, .abi = .musl, .os_ver = .{ .major = 2, .minor = 4, .patch = 2 } },
@@ -143,6 +143,31 @@ pub fn canBuildLibC(target: *const std.Target) bool {
     return false;
 }
 
+pub fn hurdTupleSimple(
+    allocator: Allocator,
+    arch: std.Target.Cpu.Arch,
+    abi: std.Target.Abi,
+) ![]u8 {
+    return std.fmt.allocPrint(allocator, "{s}-{s}", .{ @tagName(arch), @tagName(abi) });
+}
+
+pub fn hurdTuple(allocator: Allocator, target: *const std.Target) ![]u8 {
+    return hurdTupleSimple(allocator, target.cpu.arch, target.abi);
+}
+
+pub fn linuxTripleSimple(
+    allocator: Allocator,
+    arch: std.Target.Cpu.Arch,
+    os_tag: std.Target.Os.Tag,
+    abi: std.Target.Abi,
+) ![]u8 {
+    return std.fmt.allocPrint(allocator, "{s}-{s}-{s}", .{ @tagName(arch), @tagName(os_tag), @tagName(abi) });
+}
+
+pub fn linuxTriple(allocator: Allocator, target: *const std.Target) ![]u8 {
+    return linuxTripleSimple(allocator, target.cpu.arch, target.os.tag, target.abi);
+}
+
 /// Returns the subdirectory triple to be used to find the correct glibc for the given `arch`, `os`,
 /// and `abi` in an installation directory created by glibc's `build-many-glibcs.py` script.
 ///
@@ -162,8 +187,8 @@ pub fn glibcRuntimeTriple(
     }
 
     return switch (os) {
-        .hurd => std.Target.hurdTupleSimple(allocator, arch, abi),
-        .linux => std.Target.linuxTripleSimple(allocator, arch, os, abi),
+        .hurd => hurdTupleSimple(allocator, arch, abi),
+        .linux => linuxTripleSimple(allocator, arch, os, abi),
         else => unreachable,
     };
 }
@@ -179,7 +204,7 @@ pub fn muslRuntimeTriple(
 ) Allocator.Error![]const u8 {
     assert(abi.isMusl());
 
-    return std.Target.linuxTripleSimple(allocator, arch, .linux, abi);
+    return linuxTripleSimple(allocator, arch, .linux, abi);
 }
 
 pub fn osArchName(target: *const std.Target) [:0]const u8 {
@@ -245,7 +270,7 @@ pub fn glibcArchNameHeaders(arch: std.Target.Cpu.Arch) [:0]const u8 {
         .arm, .armeb => "arm",
         .loongarch64 => "loongarch",
         .mips, .mipsel, .mips64, .mips64el => "mips",
-        .powerpc, .powerpc64, .powerpc64le => "powerpc",
+        .powerpc64le => "powerpc",
         .riscv32, .riscv64 => "riscv",
         .sparc, .sparc64 => "sparc",
         .x86, .x86_64 => "x86",
@@ -501,32 +526,30 @@ pub fn intByteSize(target: *const std.Target, bits: u16) u16 {
 }
 
 pub fn intAlignment(target: *const std.Target, bits: u16) u16 {
-    return switch (target.cpu.arch) {
-        .x86 => switch (bits) {
-            0...8 => 1,
-            9...16 => 2,
-            17...32 => 4,
-            33...64 => switch (target.os.tag) {
-                .uefi, .windows => 8,
-                else => 4,
-            },
-            else => 16,
-        },
-        .x86_64 => switch (bits) {
-            0...8 => 1,
-            9...16 => 2,
-            17...32 => 4,
-            33...64 => 8,
-            else => 16,
-        },
-        else => switch (bits) {
-            0 => 1,
-            else => @min(
-                std.math.ceilPowerOfTwoPromote(u16, @intCast((@as(u17, bits) + 7) / 8)),
-                target.cMaxIntAlignment(),
-            ),
-        },
+    return switch (bits) {
+        0 => 1,
+        else => @min(
+            std.math.ceilPowerOfTwoPromote(u16, @intCast((@as(u17, bits) + 7) / 8)),
+            target.cMaxIntAlignment(),
+        ),
     };
+}
+
+pub fn compilerRtFloatAbi(target: *const std.Target, bits: u16) std.Target.Abi.Float {
+    if (target.cpu.has(.x86, .soft_float)) return .soft;
+    // Marks targets where clang does not even provide a usable C type.
+    const no_c_type_available = .soft;
+    switch (bits) {
+        else => unreachable,
+        16 => if (target.cpu.arch.isMIPS() or target.cpu.arch.isPowerPC()) return no_c_type_available,
+        32, 64 => {},
+        80 => if (target.cTypeBitSize(.longdouble) != 80) return no_c_type_available,
+        128 => {
+            if (target.cpu.arch.isX86()) return .hard; // if (target.abi == .msvc) __m128i else __float128
+            if (target.cTypeBitSize(.longdouble) != 128) return no_c_type_available;
+        },
+    }
+    return .hard;
 }
 
 const std = @import("std");

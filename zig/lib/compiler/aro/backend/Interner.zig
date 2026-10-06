@@ -22,7 +22,7 @@ const KeyAdapter = struct {
 
     pub fn eql(adapter: KeyAdapter, a: Key, b_void: void, b_map_index: usize) bool {
         _ = b_void;
-        return adapter.interner.get(@as(Ref, @enumFromInt(b_map_index))).eql(a);
+        return adapter.interner.get(@as(Ref, @fromBackingInt(@intCast(b_map_index)))).eql(a);
     }
 
     pub fn hash(adapter: KeyAdapter, a: Key) u32 {
@@ -582,7 +582,7 @@ pub fn put(i: *Interner, gpa: Allocator, key: Key) !Ref {
     if (key.toRef()) |some| return some;
     const adapter: KeyAdapter = .{ .interner = i };
     const gop = try i.map.getOrPutAdapted(gpa, key, adapter);
-    if (gop.found_existing) return @enumFromInt(gop.index);
+    if (gop.found_existing) return @fromBackingInt(@intCast(gop.index));
     try i.items.ensureUnusedCapacity(gpa, 1);
 
     switch (key) {
@@ -733,7 +733,7 @@ pub fn put(i: *Interner, gpa: Allocator, key: Key) !Ref {
             });
         },
         .record_ty => |elems| {
-            try i.extra.ensureUnusedCapacity(gpa, @typeInfo(Tag.Record).@"struct".fields.len +
+            try i.extra.ensureUnusedCapacity(gpa, @typeInfo(Tag.Record).@"struct".field_names.len +
                 elems.len);
             i.items.appendAssumeCapacity(.{
                 .tag = .record_ty,
@@ -751,22 +751,23 @@ pub fn put(i: *Interner, gpa: Allocator, key: Key) !Ref {
         => unreachable,
     }
 
-    return @enumFromInt(gop.index);
+    return @fromBackingInt(@intCast(gop.index));
 }
 
 fn addExtra(i: *Interner, gpa: Allocator, extra: anytype) Allocator.Error!u32 {
-    const fields = @typeInfo(@TypeOf(extra)).@"struct".fields;
-    try i.extra.ensureUnusedCapacity(gpa, fields.len);
+    const field_count = @typeInfo(@TypeOf(extra)).@"struct".field_names.len;
+    try i.extra.ensureUnusedCapacity(gpa, field_count);
     return i.addExtraAssumeCapacity(extra);
 }
 
 fn addExtraAssumeCapacity(i: *Interner, extra: anytype) u32 {
     const result = @as(u32, @intCast(i.extra.items.len));
-    inline for (@typeInfo(@TypeOf(extra)).@"struct".fields) |field| {
-        i.extra.appendAssumeCapacity(switch (field.type) {
-            Ref => @intFromEnum(@field(extra, field.name)),
-            u32 => @field(extra, field.name),
-            else => @compileError("bad field type: " ++ @typeName(field.type)),
+    const info = @typeInfo(@TypeOf(extra)).@"struct";
+    inline for (info.field_names, info.field_types) |field_name, field_type| {
+        i.extra.appendAssumeCapacity(switch (field_type) {
+            Ref => @backingInt(@field(extra, field_name)),
+            u32 => @field(extra, field_name),
+            else => @compileError("bad field type: " ++ @typeName(field_type)),
         });
     }
     return result;
@@ -799,7 +800,7 @@ pub fn get(i: *const Interner, ref: Ref) Key {
         else => {},
     }
 
-    const item = i.items.get(@intFromEnum(ref));
+    const item = i.items.get(@backingInt(ref));
     const data = item.data;
     return switch (item.tag) {
         .int_ty => .{ .int_ty = @intCast(data) },
@@ -891,17 +892,17 @@ fn extraData(i: *const Interner, comptime T: type, index: usize) T {
 
 fn extraDataTrail(i: *const Interner, comptime T: type, index: usize) struct { data: T, end: u32 } {
     var result: T = undefined;
-    const fields = @typeInfo(T).@"struct".fields;
-    inline for (fields, 0..) |field, field_i| {
+    const info = @typeInfo(T).@"struct";
+    inline for (info.field_names, info.field_types, 0..) |field_name, field_type, field_i| {
         const int32 = i.extra.items[field_i + index];
-        @field(result, field.name) = switch (field.type) {
-            Ref => @enumFromInt(int32),
+        @field(result, field_name) = switch (field_type) {
+            Ref => @fromBackingInt(int32),
             u32 => int32,
-            else => @compileError("bad field type: " ++ @typeName(field.type)),
+            else => @compileError("bad field type: " ++ @typeName(field_type)),
         };
     }
     return .{
         .data = result,
-        .end = @intCast(index + fields.len),
+        .end = @intCast(index + info.field_names.len),
     };
 }

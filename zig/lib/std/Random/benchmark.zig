@@ -55,12 +55,12 @@ const csprngs = [_]Rng{
     Rng{
         .ty = Random.Ascon,
         .name = "ascon",
-        .init_u8s = &[_]u8{0} ** 32,
+        .init_u8s = &@as([32]u8, @splat(0)),
     },
     Rng{
         .ty = Random.ChaCha,
         .name = "chacha",
-        .init_u8s = &[_]u8{0} ** 32,
+        .init_u8s = &@as([32]u8, @splat(0)),
     },
 };
 
@@ -122,7 +122,7 @@ fn usage() void {
 }
 
 fn mode(comptime x: comptime_int) comptime_int {
-    return if (builtin.mode == .Debug) x / 64 else x;
+    return if (builtin.mode == .debug) x / 64 else x;
 }
 
 pub fn main(init: std.process.Init) !void {

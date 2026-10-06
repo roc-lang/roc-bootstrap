@@ -51,12 +51,9 @@ test "@shuffle int" {
 
 test "@shuffle int strange sizes" {
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_wasm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
-
     try comptime testShuffle(2, 2, 2);
     try testShuffle(2, 2, 2);
     try comptime testShuffle(4, 4, 4);
@@ -133,12 +130,10 @@ fn testShuffle(
 
 test "@shuffle bool 1" {
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_wasm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
-
     const S = struct {
         fn doTheTest() !void {
             var x: @Vector(4, bool) = [4]bool{ false, true, false, true };
@@ -156,7 +151,6 @@ test "@shuffle bool 1" {
 
 test "@shuffle bool 2" {
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_wasm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
@@ -171,6 +165,25 @@ test "@shuffle bool 2" {
             const mask = [4]i32{ 0, ~@as(i32, 1), 1, 2 };
             const res = @shuffle(bool, x, v, mask);
             try expect(mem.eql(bool, &@as([4]bool, res), &[4]bool{ false, false, true, false }));
+        }
+    };
+    try S.doTheTest();
+    try comptime S.doTheTest();
+}
+
+test "@shuffle u0" {
+    if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
+    if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
+    if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
+
+    const S = struct {
+        fn doTheTest() !void {
+            var v: @Vector(4, u0) = @splat(0);
+            const mask = @Vector(4, i32){ undefined, 0, -1, 3 };
+            _ = .{ &v, &mask };
+            const res = @shuffle(u0, v, v, mask);
+            comptime if (!std.mem.eql(u0, &@as([4]u0, res), &[4]u0{ 0, 0, 0, 0 })) unreachable;
         }
     };
     try S.doTheTest();

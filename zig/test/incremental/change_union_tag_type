@@ -1,0 +1,54 @@
+#exe {
+-Mroot=main.zig
+#}
+
+#write main.zig {
+const A = enum(u8) { a };
+const B = enum(u8) { b };
+const Foo = union(A) { a: u8 };
+pub fn main(init: std.process.Init) !void {
+    const field_name = @typeInfo(Foo).@"union".field_names[0];
+    var stdout_writer = std.Io.File.stdout().writerStreaming(init.io, &.{});
+    try stdout_writer.interface.print("{s}\n", .{field_name});
+}
+const std = @import("std");
+#}
+#update
+#check stdout {
+a
+#}
+
+#write main.zig {
+const A = enum(u8) { a };
+const B = enum(u8) { b };
+const Foo = union(B) { a: u8 };
+pub fn main(init: std.process.Init) !void {
+    const field_name = @typeInfo(Foo).@"union".field_names[0];
+    var stdout_writer = std.Io.File.stdout().writerStreaming(init.io, &.{});
+    try stdout_writer.interface.print("{s}\n", .{field_name});
+}
+const std = @import("std");
+#}
+#update {
+change tag type#}
+#check errors {
+main.zig:3:24: error: no field named 'a' in enum 'main.B'
+main.zig:2:11: note: enum declared here
+#}
+
+#write main.zig {
+const A = enum(u8) { a };
+const B = enum(u8) { b };
+const Foo = union(B) { b: u8 };
+pub fn main(init: std.process.Init) !void {
+    const field_name = @typeInfo(Foo).@"union".field_names[0];
+    var stdout_writer = std.Io.File.stdout().writerStreaming(init.io, &.{});
+    try stdout_writer.interface.print("{s}\n", .{field_name});
+}
+const std = @import("std");
+#}
+#update {
+change field name to match new tag type#}
+#check stdout {
+b
+#}

@@ -1,4 +1,5 @@
 const builtin = @import("builtin");
+const spirv_spec = @import("spirv_spec");
 
 const std = @import("std");
 const Io = std.Io;
@@ -47,6 +48,69 @@ const ArchTarget = struct {
     extra_features: []const Feature = &.{},
     omit_cpus: []const []const u8 = &.{},
     branch_quota: ?usize = null,
+};
+
+const spirv_omitted_capabilities = [_][]const u8{
+    "shader", // implied by Vulkan/OpenGL targets
+    "kernel", // implied by OpenCL/AMDHSA targets
+    "addresses", // implied by OpenCL/AMDHSA targets
+    "physical_storage_buffer_addresses", // implied by spirv64-vulkan
+    "linkage", // automatically emitted when externs need linkage decorations
+};
+const spirv_omitted_extensions = [_][]const u8{
+    "SPV_KHR_physical_storage_buffer", // paired with physical_storage_buffer_addresses
+};
+
+const spirv_extra_features: []const Feature = blk: {
+    @setEvalBranchQuota(15_000);
+    var features: []const Feature = &.{};
+
+    cap: for (
+        @typeInfo(spirv_spec.Capability).@"enum".field_names,
+        @typeInfo(spirv_spec.Capability).@"enum".field_values,
+    ) |name, value| {
+        for (spirv_omitted_capabilities) |omitted| {
+            if (std.mem.eql(u8, omitted, name)) continue :cap;
+        }
+        features = features ++ &[_]Feature{.{
+            .zig_name = name,
+            .desc = "Enable " ++ name ++ " capability",
+            .deps = &struct {
+                const extensions = spirv_spec.Capability.dependencies(@fromBackingInt(@intCast(value)));
+                const deps: [extensions.len][]const u8 = inner: {
+                    var out: [extensions.len][]const u8 = undefined;
+                    for (extensions, 0..) |ext, i| out[i] = @tagName(ext);
+                    break :inner out;
+                };
+            }.deps,
+        }};
+    }
+
+    ext: for (@typeInfo(spirv_spec.Extension).@"enum".field_names) |name| {
+        for (spirv_omitted_extensions) |omitted| {
+            if (std.mem.eql(u8, omitted, name)) continue :ext;
+        }
+        features = features ++ &[_]Feature{.{
+            .zig_name = name,
+            .desc = "Enable " ++ name ++ " extension",
+            .deps = if (std.mem.eql(u8, name, "v1_6"))
+                &.{"v1_5"}
+            else if (std.mem.eql(u8, name, "v1_5"))
+                &.{"v1_4"}
+            else if (std.mem.eql(u8, name, "v1_4"))
+                &.{"v1_3"}
+            else if (std.mem.eql(u8, name, "v1_3"))
+                &.{"v1_2"}
+            else if (std.mem.eql(u8, name, "v1_2"))
+                &.{"v1_1"}
+            else if (std.mem.eql(u8, name, "v1_1"))
+                &.{"v1_0"}
+            else
+                &.{},
+        }};
+    }
+
+    break :blk features;
 };
 
 const targets = [_]ArchTarget{
@@ -204,6 +268,10 @@ const targets = [_]ArchTarget{
                 .flatten = true,
             },
             .{
+                .llvm_name = "ampere1c",
+                .flatten = true,
+            },
+            .{
                 .llvm_name = "apple-a7",
                 .flatten = true,
             },
@@ -245,6 +313,26 @@ const targets = [_]ArchTarget{
             },
             .{
                 .llvm_name = "apple-m4",
+                .flatten = true,
+            },
+            .{
+                .llvm_name = "apple-m5",
+                .flatten = true,
+            },
+            .{
+                .llvm_name = "c1-nano",
+                .flatten = true,
+            },
+            .{
+                .llvm_name = "c1-premium",
+                .flatten = true,
+            },
+            .{
+                .llvm_name = "c1-pro",
+                .flatten = true,
+            },
+            .{
+                .llvm_name = "c1-ultra",
                 .flatten = true,
             },
             .{
@@ -863,6 +951,10 @@ const targets = [_]ArchTarget{
                 .zig_name = "v9_6a",
             },
             .{
+                .llvm_name = "armv9.7-a",
+                .zig_name = "v9_7a",
+            },
+            .{
                 .llvm_name = "armv9-a",
                 .zig_name = "v9a",
             },
@@ -981,6 +1073,10 @@ const targets = [_]ArchTarget{
             .{
                 .llvm_name = "v9.6a",
                 .zig_name = "has_v9_6a",
+            },
+            .{
+                .llvm_name = "v9.7a",
+                .zig_name = "has_v9_7a",
             },
         },
         .extra_cpus = &.{
@@ -1251,6 +1347,31 @@ const targets = [_]ArchTarget{
         .extra_cpus = &.{
             .{
                 .llvm_name = null,
+                .zig_name = "generic_la64",
+                .features = &.{
+                    "64bit",
+                },
+            },
+            .{
+                .llvm_name = null,
+                .zig_name = "la32v1_0",
+                .features = &.{
+                    "32bit",
+                    "32s",
+                    "d",
+                    "ual",
+                },
+            },
+            .{
+                .llvm_name = null,
+                .zig_name = "la32rv1_0",
+                .features = &.{
+                    "32bit",
+                    "ual",
+                },
+            },
+            .{
+                .llvm_name = null,
                 .zig_name = "la64v1_0",
                 .features = &.{
                     "64bit",
@@ -1276,6 +1397,8 @@ const targets = [_]ArchTarget{
         },
         .omit_cpus = &.{
             "generic",
+            "generic-la64",
+            "loongarch32",
             "loongarch64",
         },
     },
@@ -1307,6 +1430,15 @@ const targets = [_]ArchTarget{
             },
         },
         .extra_cpus = &.{
+            .{
+                .llvm_name = null,
+                .zig_name = "r3000a",
+                .features = &.{
+                    "mips1",
+                    "soft_float",
+                    "notraps",
+                },
+            },
             .{
                 .llvm_name = null,
                 .zig_name = "allegrex",
@@ -1383,83 +1515,7 @@ const targets = [_]ArchTarget{
             .td_name = "SPIRV",
         },
         .branch_quota = 2000,
-        .extra_features = &.{
-            .{
-                .zig_name = "v1_0",
-                .desc = "Enable version 1.0",
-                .deps = &.{},
-            },
-            .{
-                .zig_name = "v1_1",
-                .desc = "Enable version 1.1",
-                .deps = &.{"v1_0"},
-            },
-            .{
-                .zig_name = "v1_2",
-                .desc = "Enable version 1.2",
-                .deps = &.{"v1_1"},
-            },
-            .{
-                .zig_name = "v1_3",
-                .desc = "Enable version 1.3",
-                .deps = &.{"v1_2"},
-            },
-            .{
-                .zig_name = "v1_4",
-                .desc = "Enable version 1.4",
-                .deps = &.{"v1_3"},
-            },
-            .{
-                .zig_name = "v1_5",
-                .desc = "Enable version 1.5",
-                .deps = &.{"v1_4"},
-            },
-            .{
-                .zig_name = "v1_6",
-                .desc = "Enable version 1.6",
-                .deps = &.{"v1_5"},
-            },
-            .{
-                .zig_name = "int64",
-                .desc = "Enable Int64 capability",
-                .deps = &.{"v1_0"},
-            },
-            .{
-                .zig_name = "float16",
-                .desc = "Enable Float16 capability",
-                .deps = &.{"v1_0"},
-            },
-            .{
-                .zig_name = "float64",
-                .desc = "Enable Float64 capability",
-                .deps = &.{"v1_0"},
-            },
-            .{
-                .zig_name = "storage_push_constant16",
-                .desc = "Enable SPV_KHR_16bit_storage extension and the StoragePushConstant16 capability",
-                .deps = &.{"v1_3"},
-            },
-            .{
-                .zig_name = "arbitrary_precision_integers",
-                .desc = "Enable SPV_INTEL_arbitrary_precision_integers extension and the ArbitraryPrecisionIntegersINTEL capability",
-                .deps = &.{"v1_5"},
-            },
-            .{
-                .zig_name = "generic_pointer",
-                .desc = "Enable GenericPointer capability",
-                .deps = &.{"v1_0"},
-            },
-            .{
-                .zig_name = "vector16",
-                .desc = "Enable Vector16 capability",
-                .deps = &.{"v1_0"},
-            },
-            .{
-                .zig_name = "variable_pointers",
-                .desc = "Enable SPV_KHR_physical_storage_buffer extension and the PhysicalStorageBufferAddresses capability",
-                .deps = &.{"v1_0"},
-            },
-        },
+        .extra_features = spirv_extra_features,
         .extra_cpus = &.{
             .{
                 .llvm_name = null,
@@ -1496,6 +1552,103 @@ const targets = [_]ArchTarget{
                 .llvm_name = null,
                 .zig_name = "baseline_rv64",
                 .features = &.{ "64bit", "a", "c", "d", "f", "i", "m" },
+            },
+            .{
+                .llvm_name = null,
+                .zig_name = "spacemit_a100",
+                .features = &.{
+                    "64bit",
+                    "a",
+                    "b",
+                    "c",
+                    "dlen_factor_2",
+                    "i",
+                    "m",
+                    "optimized_nf2_segment_load_store",
+                    "optimized_nf3_segment_load_store",
+                    "optimized_nf4_segment_load_store",
+                    "smepmp",
+                    "smnpm",
+                    "smstateen",
+                    "ssccptr",
+                    "sscofpmf",
+                    "sscounterenw",
+                    "ssnpm",
+                    "sspm",
+                    "sstc",
+                    "sstvala",
+                    "sstvecd",
+                    "ssu64xl",
+                    "supm",
+                    "svade",
+                    "svbare",
+                    "svinval",
+                    "svnapot",
+                    "svpbmt",
+                    "unaligned_scalar_mem",
+                    "v",
+                    "vxrm_pipeline_flush",
+                    "za64rs",
+                    "zawrs",
+                    "zbc",
+                    "zbkc",
+                    "zcb",
+                    "zcmop",
+                    "zfa",
+                    "zfh",
+                    "zic64b",
+                    "zicbom",
+                    "zicbop",
+                    "zicboz",
+                    "ziccamoa",
+                    "ziccif",
+                    "zicclsm",
+                    "ziccrse",
+                    "zicntr",
+                    "zicond",
+                    "zifencei",
+                    "zihintntl",
+                    "zihintpause",
+                    "zihpm",
+                    "zimop",
+                    "zkt",
+                    "zvbb",
+                    "zvfbfwma",
+                    "zvfh",
+                    "zvkng",
+                    "zvknha",
+                    "zvksc",
+                    "zvksg",
+                    "zvl1024b",
+                },
+            },
+            .{
+                .llvm_name = null,
+                .zig_name = "spacemit_x100",
+                .features = &.{
+                    "dlen_factor_2",
+                    "optimized_nf2_segment_load_store",
+                    "optimized_nf3_segment_load_store",
+                    "optimized_nf4_segment_load_store",
+                    "rva23s64",
+                    "smepmp",
+                    "smnpm",
+                    "smstateen",
+                    "sspm",
+                    "unaligned_scalar_mem",
+                    "vxrm_pipeline_flush",
+                    "xsmtvdot",
+                    "zbc",
+                    "zbkc",
+                    "zfh",
+                    "zvfbfwma",
+                    "zvfh",
+                    "zvkng",
+                    "zvknha",
+                    "zvksc",
+                    "zvksg",
+                    "zvl256b",
+                },
             },
         },
     },
@@ -1557,26 +1710,17 @@ const targets = [_]ArchTarget{
                 .llvm_name = "64bit-mode",
                 .omit = true,
             },
-            // Remove these when LLVM removes AVX10.N-256 support.
-            .{
-                .llvm_name = "avx10.1-256",
-                .flatten = true,
-            },
-            .{
-                .llvm_name = "avx10.2-256",
-                .flatten = true,
-            },
             .{
                 .llvm_name = "avx10.1-512",
-                .zig_name = "avx10_1",
+                .omit = true,
             },
             .{
                 .llvm_name = "avx10.2-512",
-                .zig_name = "avx10_2",
+                .omit = true,
             },
             .{
-                .llvm_name = "avx512f",
-                .extra_deps = &.{"evex512"},
+                .llvm_name = "evex512",
+                .omit = true,
             },
             .{
                 .llvm_name = "alderlake",
@@ -1968,7 +2112,9 @@ const Job = struct {
 };
 
 fn processOneTarget(io: Io, job: Job) void {
-    errdefer |err| std.debug.panic("panic: {s}", .{@errorName(err)});
+    processOneTargetInner(io, job) catch |err| std.debug.panic("panic: {s}", .{@errorName(err)});
+}
+fn processOneTargetInner(io: Io, job: Job) !void {
     const target = job.target;
 
     var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -2295,7 +2441,7 @@ fn processOneTarget(io: Io, job: Job) void {
         try w.print("    @setEvalBranchQuota({d});\n", .{branch_quota});
     }
     try w.writeAll(
-        \\    const len = @typeInfo(Feature).@"enum".fields.len;
+        \\    const len = @typeInfo(Feature).@"enum".field_names.len;
         \\    std.debug.assert(len <= CpuFeature.Set.needed_bit_count);
         \\    var result: [len]CpuFeature = undefined;
         \\
@@ -2364,7 +2510,7 @@ fn processOneTarget(io: Io, job: Job) void {
         \\    const ti = @typeInfo(Feature);
         \\    for (&result, 0..) |*elem, i| {
         \\        elem.index = i;
-        \\        elem.name = ti.@"enum".fields[i].name;
+        \\        elem.name = ti.@"enum".field_names[i];
         \\    }
         \\    break :blk result;
         \\};

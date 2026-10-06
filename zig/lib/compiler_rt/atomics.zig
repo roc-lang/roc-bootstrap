@@ -5,7 +5,7 @@ const arch = cpu.arch;
 const std = @import("std");
 
 const compiler_rt = @import("../compiler_rt.zig");
-const symbol = @import("../compiler_rt.zig").symbol;
+const symbol = compiler_rt.symbol;
 
 // This parameter is true iff the target architecture supports the bare minimum
 // to implement the atomic load/store intrinsics.
@@ -94,7 +94,7 @@ const SpinlockTable = struct {
         }
     };
 
-    list: [max_spinlocks]Spinlock = [_]Spinlock{.{}} ** max_spinlocks,
+    list: [max_spinlocks]Spinlock = @splat(.{}),
 
     // The spinlock table behaves as a really simple hash table, mapping
     // addresses to spinlocks. The mapping is not unique but that's only a

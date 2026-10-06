@@ -514,6 +514,12 @@ const pbkdf_prf = struct {
         out.* = hash(self.sha2pass, sha2salt);
     }
 
+    pub fn finalResult(d: *Self) [mac_length]u8 {
+        var result: [mac_length]u8 = undefined;
+        d.final(&result);
+        return result;
+    }
+
     /// Matches OpenBSD function
     /// https://github.com/openbsd/src/blob/6df1256b7792691e66c2ed9d86a8c103069f9e34/lib/libutil/bcrypt_pbkdf.c#L98
     pub fn hash(sha2pass: [Sha512.digest_length]u8, sha2salt: [Sha512.digest_length]u8) [32]u8 {
@@ -635,7 +641,7 @@ const crypt_format = struct {
         _ = Codec.Encoder.encode(&ct_str, dk[0..]);
 
         var s_buf: [hash_length]u8 = undefined;
-        const s = fmt.bufPrint(
+        const s = mem.print(
             s_buf[0..],
             "{s}b${d}{d}${s}{s}",
             .{ prefix, params.rounds_log / 10, params.rounds_log % 10, salt_str, ct_str },
@@ -868,20 +874,25 @@ test "bcrypt crypt format" {
         strVerify(s, "invalid password", verify_options),
     );
 
+    const password_100: []const u8 = password: {
+        const arr: [100][8]u8 = @splat("password".*);
+        break :password @ptrCast(&arr);
+    };
+
     var long_buf: [hash_length]u8 = undefined;
-    var long_s = try strHash("password" ** 100, hash_options, &long_buf, io);
+    var long_s = try strHash(password_100, hash_options, &long_buf, io);
 
     try testing.expect(mem.startsWith(u8, long_s, crypt_format.prefix));
-    try strVerify(long_s, "password" ** 100, verify_options);
+    try strVerify(long_s, password_100, verify_options);
     try testing.expectError(
         error.PasswordVerificationFailed,
-        strVerify(long_s, "password" ** 101, verify_options),
+        strVerify(long_s, password_100 ++ "password", verify_options),
     );
 
     hash_options.params.silently_truncate_password = true;
     verify_options.silently_truncate_password = true;
-    long_s = try strHash("password" ** 100, hash_options, &long_buf, io);
-    try strVerify(long_s, "password" ** 101, verify_options);
+    long_s = try strHash(password_100, hash_options, &long_buf, io);
+    try strVerify(long_s, password_100 ++ "password", verify_options);
 
     try strVerify(
         "$2b$08$WUQKyBCaKpziCwUXHiMVvu40dYVjkTxtWJlftl0PpjY2BxWSvFIEe",
@@ -909,20 +920,25 @@ test "bcrypt phc format" {
         strVerify(s, "invalid password", verify_options),
     );
 
+    const password_100: []const u8 = password: {
+        const arr: [100][8]u8 = @splat("password".*);
+        break :password @ptrCast(&arr);
+    };
+
     var long_buf: [hash_length * 2]u8 = undefined;
-    var long_s = try strHash("password" ** 100, hash_options, &long_buf, io);
+    var long_s = try strHash(password_100, hash_options, &long_buf, io);
 
     try testing.expect(mem.startsWith(u8, long_s, prefix));
-    try strVerify(long_s, "password" ** 100, verify_options);
+    try strVerify(long_s, password_100, verify_options);
     try testing.expectError(
         error.PasswordVerificationFailed,
-        strVerify(long_s, "password" ** 101, verify_options),
+        strVerify(long_s, password_100 ++ "password", verify_options),
     );
 
     hash_options.params.silently_truncate_password = true;
     verify_options.silently_truncate_password = true;
-    long_s = try strHash("password" ** 100, hash_options, &long_buf, io);
-    try strVerify(long_s, "password" ** 101, verify_options);
+    long_s = try strHash(password_100, hash_options, &long_buf, io);
+    try strVerify(long_s, password_100 ++ "password", verify_options);
 
     try strVerify(
         "$bcrypt$r=5$2NopntlgE2lX3cTwr4qz8A$r3T7iKYQNnY4hAhGjk9RmuyvgrYJZwc",

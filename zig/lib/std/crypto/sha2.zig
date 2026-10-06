@@ -461,7 +461,7 @@ test "sha256 streaming" {
 }
 
 test "sha256 aligned final" {
-    var block = [_]u8{0} ** Sha256.block_length;
+    var block: [Sha256.block_length]u8 = @splat(0);
     var out: [Sha256.digest_length]u8 = undefined;
 
     var h = Sha256.init(.{});
@@ -474,7 +474,7 @@ fn Sha2x64(comptime iv: Iv64, digest_bits: comptime_int) type {
     return struct {
         const Self = @This();
         pub const block_length = 128;
-        pub const digest_length = std.math.divCeil(comptime_int, digest_bits, 8) catch unreachable;
+        pub const digest_length = @divCeil(digest_bits, 8);
         pub const Options = struct {};
 
         s: Iv64,
@@ -833,7 +833,7 @@ test "sha512 streaming" {
 }
 
 test "sha512 aligned final" {
-    var block = [_]u8{0} ** Sha512.block_length;
+    var block: [Sha512.block_length]u8 = @splat(0);
     var out: [Sha512.digest_length]u8 = undefined;
 
     var h = Sha512.init(.{});

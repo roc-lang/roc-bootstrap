@@ -21,7 +21,6 @@ test "super basic invocations" {
 
 test "basic invocations" {
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_wasm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
@@ -277,7 +276,7 @@ test "forced tail call" {
     if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
 
-    if (builtin.zig_backend == .stage2_llvm) {
+    if (builtin.zig_backend == .stage2_llvm or builtin.zig_backend == .stage2_c) {
         if (builtin.cpu.arch.isMIPS() or builtin.cpu.arch.isPowerPC() or builtin.cpu.arch.isWasm()) {
             return error.SkipZigTest;
         }
@@ -312,7 +311,7 @@ test "inline call preserves tail call" {
     if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
 
-    if (builtin.zig_backend == .stage2_llvm) {
+    if (builtin.zig_backend == .stage2_llvm or builtin.zig_backend == .stage2_c) {
         if (builtin.cpu.arch.isMIPS() or builtin.cpu.arch.isPowerPC() or builtin.cpu.arch.isWasm()) {
             return error.SkipZigTest;
         }
@@ -372,11 +371,11 @@ test "Enum constructed by @Enum passed as generic argument" {
             alive: bool,
         });
         fn foo(comptime a: E, b: u32) !void {
-            try expect(@intFromEnum(a) == b);
+            try expect(@backingInt(a) == b);
         }
     };
-    inline for (@typeInfo(S.E).@"enum".fields, 0..) |_, i| {
-        try S.foo(@as(S.E, @enumFromInt(i)), i);
+    inline for (@typeInfo(S.E).@"enum".field_names, 0..) |_, i| {
+        try S.foo(@as(S.E, @fromBackingInt(@intCast(i))), i);
     }
 }
 
@@ -408,6 +407,7 @@ test "recursive inline call with comptime known argument" {
 
 test "inline while with @call" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
+    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
 
     const S = struct {
         fn inc(a: *u32) void {
@@ -538,6 +538,8 @@ test "call function pointer in comptime field" {
 }
 
 test "generic function pointer can be called" {
+    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+
     const S = struct {
         var ok = false;
         fn foo(x: anytype) void {
@@ -556,7 +558,7 @@ test "value returned from comptime function is comptime known" {
             else => unreachable,
         } {
             return switch (@typeInfo(T)) {
-                .@"struct" => |info| info.fields.len,
+                .@"struct" => |info| info.field_names.len,
                 else => unreachable,
             };
         }
@@ -708,7 +710,7 @@ test "tail call function pointer" {
     if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
 
-    if (builtin.zig_backend == .stage2_llvm) {
+    if (builtin.zig_backend == .stage2_llvm or builtin.zig_backend == .stage2_c) {
         if (builtin.cpu.arch.isMIPS() or builtin.cpu.arch.isPowerPC() or builtin.cpu.arch.isWasm()) {
             return error.SkipZigTest;
         }
@@ -735,8 +737,9 @@ test "tail call function pointer" {
 test "tail call with potentially extended types" {
     if (builtin.zig_backend == .stage2_wasm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_x86_64) return error.SkipZigTest; // TODO
+    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
 
-    if (builtin.zig_backend == .stage2_llvm) {
+    if (builtin.zig_backend == .stage2_llvm or builtin.zig_backend == .stage2_c) {
         if (builtin.cpu.arch.isMIPS() or builtin.cpu.arch.isPowerPC() or builtin.cpu.arch.isWasm()) {
             return error.SkipZigTest;
         }

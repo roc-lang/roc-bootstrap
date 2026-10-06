@@ -34,11 +34,11 @@ pub const Register = struct {
         quad = 4,
 
         pub fn n(ss: ScalarSize) ScalarSize {
-            return @enumFromInt(@intFromEnum(ss) - 1);
+            return @fromBackingInt(@intCast(@backingInt(ss) - 1));
         }
 
         pub fn w(ss: ScalarSize) ScalarSize {
-            return @enumFromInt(@intFromEnum(ss) + 1);
+            return @fromBackingInt(@intCast(@backingInt(ss) + 1));
         }
 
         pub fn prefix(ss: ScalarSize) u8 {
@@ -68,10 +68,10 @@ pub const Register = struct {
             elem_size: Instruction.DataProcessingVector.Size,
         };
         pub fn wrap(unwrapped: Unwrapped) Arrangement {
-            return @enumFromInt(@as(@typeInfo(Arrangement).@"enum".tag_type, @bitCast(unwrapped)));
+            return @fromBackingInt(@intCast(@as(@typeInfo(Arrangement).@"enum".tag_type, @bitCast(unwrapped))));
         }
         pub fn unwrap(arrangement: Arrangement) Unwrapped {
-            return @bitCast(@intFromEnum(arrangement));
+            return @bitCast(@backingInt(arrangement));
         }
 
         pub fn len(arrangement: Arrangement) u5 {
@@ -395,9 +395,9 @@ pub const Register = struct {
 
         pub fn decode(enc: Encoded, opts: struct { sp: bool = false, V: bool = false }) Alias {
             return switch (opts.V) {
-                false => @enumFromInt(@intFromEnum(Alias.r0) + @intFromEnum(enc) +
-                    @intFromBool(opts.sp and enc == comptime Alias.sp.encode(.{ .sp = true }))),
-                true => @enumFromInt(@intFromEnum(Alias.v0) + @intFromEnum(enc)),
+                false => @fromBackingInt(@intCast(@backingInt(Alias.r0) + @backingInt(enc) +
+                    @intFromBool(opts.sp and enc == comptime Alias.sp.encode(.{ .sp = true })))),
+                true => @fromBackingInt(@intCast(@backingInt(Alias.v0) + @backingInt(enc))),
             };
         }
     };
@@ -503,38 +503,38 @@ pub const Register = struct {
 
         pub fn alias(ra: Alias, fa: Format.Alias) Register {
             switch (fa) {
-                .general => assert(@intFromEnum(ra) >= @intFromEnum(Alias.r0) and @intFromEnum(ra) <= @intFromEnum(Alias.sp)),
+                .general => assert(@backingInt(ra) >= @backingInt(Alias.r0) and @backingInt(ra) <= @backingInt(Alias.sp)),
                 .other => switch (ra) {
                     else => unreachable,
                     .pc, .fpcr, .fpsr, .ffr => {},
                 },
-                .vector => assert(@intFromEnum(ra) >= @intFromEnum(Alias.v0) and @intFromEnum(ra) <= @intFromEnum(Alias.v31)),
-                .predicate => assert(@intFromEnum(ra) >= @intFromEnum(Alias.p0) and @intFromEnum(ra) <= @intFromEnum(Alias.p15)),
+                .vector => assert(@backingInt(ra) >= @backingInt(Alias.v0) and @backingInt(ra) <= @backingInt(Alias.v31)),
+                .predicate => assert(@backingInt(ra) >= @backingInt(Alias.p0) and @backingInt(ra) <= @backingInt(Alias.p15)),
             }
             return .{ .alias = ra, .format = .{ .alias = fa } };
         }
         pub fn general(ra: Alias, gs: GeneralSize) Register {
-            assert(@intFromEnum(ra) >= @intFromEnum(Alias.r0) and @intFromEnum(ra) <= @intFromEnum(Alias.sp));
+            assert(@backingInt(ra) >= @backingInt(Alias.r0) and @backingInt(ra) <= @backingInt(Alias.sp));
             return .{ .alias = ra, .format = .{ .general = gs } };
         }
         pub fn scalar(ra: Alias, ss: ScalarSize) Register {
-            assert(@intFromEnum(ra) >= @intFromEnum(Alias.v0) and @intFromEnum(ra) <= @intFromEnum(Alias.v31));
+            assert(@backingInt(ra) >= @backingInt(Alias.v0) and @backingInt(ra) <= @backingInt(Alias.v31));
             return .{ .alias = ra, .format = .{ .scalar = ss } };
         }
         pub fn vector(ra: Alias, arrangement: Arrangement) Register {
-            assert(@intFromEnum(ra) >= @intFromEnum(Alias.v0) and @intFromEnum(ra) <= @intFromEnum(Alias.v31));
+            assert(@backingInt(ra) >= @backingInt(Alias.v0) and @backingInt(ra) <= @backingInt(Alias.v31));
             return .{ .alias = ra, .format = .{ .vector = arrangement } };
         }
         pub fn element(ra: Alias, ss: ScalarSize, index: u4) Register {
-            assert(@intFromEnum(ra) >= @intFromEnum(Alias.v0) and @intFromEnum(ra) <= @intFromEnum(Alias.v31));
+            assert(@backingInt(ra) >= @backingInt(Alias.v0) and @backingInt(ra) <= @backingInt(Alias.v31));
             return .{ .alias = ra, .format = .{ .element = .{ .size = ss, .index = index } } };
         }
         pub fn z(ra: Alias) Register {
-            assert(@intFromEnum(ra) >= @intFromEnum(Alias.v0) and @intFromEnum(ra) <= @intFromEnum(Alias.v31));
+            assert(@backingInt(ra) >= @backingInt(Alias.v0) and @backingInt(ra) <= @backingInt(Alias.v31));
             return .{ .alias = ra, .format = .scalable };
         }
         pub fn p(ra: Alias) Register {
-            assert(@intFromEnum(ra) >= @intFromEnum(Alias.p0) and @intFromEnum(ra) <= @intFromEnum(Alias.p15));
+            assert(@backingInt(ra) >= @backingInt(Alias.p0) and @backingInt(ra) <= @backingInt(Alias.p15));
             return .{ .alias = ra, .format = .{ .scalar = .predicate } };
         }
 
@@ -700,7 +700,7 @@ pub const Register = struct {
         }
 
         pub fn encode(ra: Alias, comptime opts: struct { sp: bool = false, V: bool = false }) Encoded {
-            return @enumFromInt(@as(u5, switch (ra) {
+            return @fromBackingInt(@intCast(@as(u5, switch (ra) {
                 .r0 => if (opts.V) unreachable else 0,
                 .r1 => if (opts.V) unreachable else 1,
                 .r2 => if (opts.V) unreachable else 2,
@@ -770,7 +770,7 @@ pub const Register = struct {
                 .fpcr, .fpsr => unreachable,
                 .p0, .p1, .p2, .p3, .p4, .p5, .p6, .p7, .p8, .p9, .p10, .p11, .p12, .p13, .p14, .p15 => unreachable,
                 .ffr => unreachable,
-            }));
+            })));
         }
     };
 
@@ -806,21 +806,21 @@ pub const Register = struct {
             else => null,
             'r' => if (std.fmt.parseInt(u5, reg[1..], 10)) |n| switch (n) {
                 0...30 => .{
-                    .alias = @enumFromInt(@intFromEnum(Alias.r0) + n),
+                    .alias = @fromBackingInt(@intCast(@backingInt(Alias.r0) + n)),
                     .format = .{ .alias = .general },
                 },
                 31 => null,
             } else |_| null,
             'x' => if (std.fmt.parseInt(u5, reg[1..], 10)) |n| switch (n) {
                 0...30 => .{
-                    .alias = @enumFromInt(@intFromEnum(Alias.r0) + n),
+                    .alias = @fromBackingInt(@intCast(@backingInt(Alias.r0) + n)),
                     .format = .{ .general = .doubleword },
                 },
                 31 => null,
             } else |_| if (toLowerEqlAssertLower(reg, "xzr")) .xzr else null,
             'w' => if (std.fmt.parseInt(u5, reg[1..], 10)) |n| switch (n) {
                 0...30 => .{
-                    .alias = @enumFromInt(@intFromEnum(Alias.r0) + n),
+                    .alias = @fromBackingInt(@intCast(@backingInt(Alias.r0) + n)),
                     .format = .{ .general = .word },
                 },
                 31 => null,
@@ -839,27 +839,27 @@ pub const Register = struct {
             'f' => return if (toLowerEqlAssertLower(reg, "fp")) .fp else null,
             'p' => return if (toLowerEqlAssertLower(reg, "pc")) .pc else null,
             'v' => if (std.fmt.parseInt(u5, reg[1..], 10)) |n| .{
-                .alias = @enumFromInt(@intFromEnum(Alias.v0) + n),
+                .alias = @fromBackingInt(@intCast(@backingInt(Alias.v0) + n)),
                 .format = .{ .alias = .vector },
             } else |_| null,
             'q' => if (std.fmt.parseInt(u5, reg[1..], 10)) |n| .{
-                .alias = @enumFromInt(@intFromEnum(Alias.v0) + n),
+                .alias = @fromBackingInt(@intCast(@backingInt(Alias.v0) + n)),
                 .format = .{ .scalar = .quad },
             } else |_| null,
             'd' => if (std.fmt.parseInt(u5, reg[1..], 10)) |n| .{
-                .alias = @enumFromInt(@intFromEnum(Alias.v0) + n),
+                .alias = @fromBackingInt(@intCast(@backingInt(Alias.v0) + n)),
                 .format = .{ .scalar = .double },
             } else |_| null,
             's' => if (std.fmt.parseInt(u5, reg[1..], 10)) |n| .{
-                .alias = @enumFromInt(@intFromEnum(Alias.v0) + n),
+                .alias = @fromBackingInt(@intCast(@backingInt(Alias.v0) + n)),
                 .format = .{ .scalar = .single },
             } else |_| if (toLowerEqlAssertLower(reg, "sp")) .sp else null,
             'h' => if (std.fmt.parseInt(u5, reg[1..], 10)) |n| .{
-                .alias = @enumFromInt(@intFromEnum(Alias.v0) + n),
+                .alias = @fromBackingInt(@intCast(@backingInt(Alias.v0) + n)),
                 .format = .{ .scalar = .half },
             } else |_| null,
             'b' => if (std.fmt.parseInt(u5, reg[1..], 10)) |n| .{
-                .alias = @enumFromInt(@intFromEnum(Alias.v0) + n),
+                .alias = @fromBackingInt(@intCast(@backingInt(Alias.v0) + n)),
                 .format = .{ .scalar = .byte },
             } else |_| null,
         };
@@ -1271,9 +1271,9 @@ pub const Register = struct {
                 if (symbol_it.next() != null) break :encoded;
                 return .{ .op0 = op0, .op1 = op1, .CRn = CRn, .CRm = CRm, .op2 = op2 };
             }
-            inline for (@typeInfo(System).@"struct".decls) |decl| {
-                if (@TypeOf(@field(System, decl.name)) != System) continue;
-                if (toLowerEqlAssertLower(reg, decl.name)) return @field(System, decl.name);
+            inline for (@typeInfo(System).@"struct".decl_names) |decl_name| {
+                if (@TypeOf(@field(System, decl_name)) != System) continue;
+                if (toLowerEqlAssertLower(reg, decl_name)) return @field(System, decl_name);
             }
             return null;
         }
@@ -1363,7 +1363,7 @@ pub const ConditionCode = enum(u4) {
     pub const cc: ConditionCode = .lo;
 
     pub fn invert(cond: ConditionCode) ConditionCode {
-        return @enumFromInt(@intFromEnum(cond) ^ 0b0001);
+        return @fromBackingInt(@intCast(@backingInt(cond) ^ 0b0001));
     }
 };
 
@@ -2772,7 +2772,7 @@ pub const Instruction = packed union {
 
             /// C6.2.37 BR
             pub const Br = packed struct {
-                Rm: Register.Encoded = @enumFromInt(0),
+                Rm: Register.Encoded = @fromBackingInt(@intCast(0)),
                 Rn: Register.Encoded,
                 M: bool = false,
                 A: bool = false,
@@ -2786,7 +2786,7 @@ pub const Instruction = packed union {
 
             /// C6.2.35 BLR
             pub const Blr = packed struct {
-                Rm: Register.Encoded = @enumFromInt(0),
+                Rm: Register.Encoded = @fromBackingInt(@intCast(0)),
                 Rn: Register.Encoded,
                 M: bool = false,
                 A: bool = false,
@@ -2800,7 +2800,7 @@ pub const Instruction = packed union {
 
             /// C6.2.254 RET
             pub const Ret = packed struct {
-                Rm: Register.Encoded = @enumFromInt(0),
+                Rm: Register.Encoded = @fromBackingInt(@intCast(0)),
                 Rn: Register.Encoded,
                 M: bool = false,
                 A: bool = false,
@@ -6755,7 +6755,7 @@ pub const Instruction = packed union {
                 o0: AddSubtractOp = .add,
                 Rm: Register.Encoded,
                 op21: u2 = 0b01,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 decoded24: u5 = 0b11011,
                 op54: u2 = 0b00,
                 sf: Register.GeneralSize = .doubleword,
@@ -6769,7 +6769,7 @@ pub const Instruction = packed union {
                 o0: AddSubtractOp = .sub,
                 Rm: Register.Encoded,
                 op21: u2 = 0b01,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 decoded24: u5 = 0b11011,
                 op54: u2 = 0b00,
                 sf: Register.GeneralSize = .doubleword,
@@ -6783,7 +6783,7 @@ pub const Instruction = packed union {
                 o0: AddSubtractOp = .add,
                 Rm: Register.Encoded,
                 op21: u2 = 0b10,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 decoded24: u5 = 0b11011,
                 op54: u2 = 0b00,
                 sf: Register.GeneralSize = .doubleword,
@@ -6797,7 +6797,7 @@ pub const Instruction = packed union {
                 o0: AddSubtractOp = .add,
                 Rm: Register.Encoded,
                 op21: u2 = 0b01,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 decoded24: u5 = 0b11011,
                 op54: u2 = 0b00,
                 sf: Register.GeneralSize = .doubleword,
@@ -6811,7 +6811,7 @@ pub const Instruction = packed union {
                 o0: AddSubtractOp = .sub,
                 Rm: Register.Encoded,
                 op21: u2 = 0b01,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 decoded24: u5 = 0b11011,
                 op54: u2 = 0b00,
                 sf: Register.GeneralSize = .doubleword,
@@ -6825,7 +6825,7 @@ pub const Instruction = packed union {
                 o0: AddSubtractOp = .add,
                 Rm: Register.Encoded,
                 op21: u2 = 0b10,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 decoded24: u5 = 0b11011,
                 op54: u2 = 0b00,
                 sf: Register.GeneralSize = .doubleword,
@@ -7052,7 +7052,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 a: u1,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness,
+                U: std.lang.Signedness,
                 decoded30: u2 = 0b01,
             };
 
@@ -7065,7 +7065,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 decoded30: u2 = 0b01,
             };
 
@@ -7078,7 +7078,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 decoded30: u2 = 0b01,
             };
 
@@ -7091,7 +7091,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 decoded30: u2 = 0b01,
             };
 
@@ -7104,7 +7104,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 decoded30: u2 = 0b01,
             };
 
@@ -7117,7 +7117,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 decoded30: u2 = 0b01,
             };
 
@@ -7130,7 +7130,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 decoded30: u2 = 0b01,
             };
 
@@ -7143,7 +7143,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 decoded30: u2 = 0b01,
             };
 
@@ -7156,7 +7156,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 decoded30: u2 = 0b01,
             };
 
@@ -7169,7 +7169,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 decoded30: u2 = 0b01,
             };
 
@@ -7182,7 +7182,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 decoded30: u2 = 0b01,
             };
 
@@ -7195,7 +7195,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 decoded30: u2 = 0b01,
             };
 
@@ -7208,7 +7208,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 decoded30: u2 = 0b01,
             };
 
@@ -7221,7 +7221,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 decoded30: u2 = 0b01,
             };
 
@@ -7234,7 +7234,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 decoded30: u2 = 0b01,
             };
 
@@ -7247,7 +7247,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 decoded30: u2 = 0b01,
             };
 
@@ -7260,7 +7260,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 decoded30: u2 = 0b01,
             };
 
@@ -7273,7 +7273,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 decoded30: u2 = 0b01,
             };
 
@@ -7286,7 +7286,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 decoded30: u2 = 0b01,
             };
 
@@ -7299,7 +7299,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 decoded30: u2 = 0b01,
             };
 
@@ -7312,7 +7312,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 decoded30: u2 = 0b01,
             };
 
@@ -7428,7 +7428,7 @@ pub const Instruction = packed union {
                 decoded17: u5 = 0b10000,
                 size: Size,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness,
+                U: std.lang.Signedness,
                 decoded30: u2 = 0b01,
             };
 
@@ -7441,7 +7441,7 @@ pub const Instruction = packed union {
                 decoded17: u5 = 0b10000,
                 size: Size,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 decoded30: u2 = 0b01,
             };
 
@@ -7454,7 +7454,7 @@ pub const Instruction = packed union {
                 decoded17: u5 = 0b10000,
                 size: Size,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 decoded30: u2 = 0b01,
             };
 
@@ -7467,7 +7467,7 @@ pub const Instruction = packed union {
                 decoded17: u5 = 0b10000,
                 size: Size,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 decoded30: u2 = 0b01,
             };
 
@@ -7480,7 +7480,7 @@ pub const Instruction = packed union {
                 decoded17: u5 = 0b10000,
                 size: Size,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 decoded30: u2 = 0b01,
             };
 
@@ -7493,7 +7493,7 @@ pub const Instruction = packed union {
                 decoded17: u5 = 0b10000,
                 size: Size,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 decoded30: u2 = 0b01,
             };
 
@@ -7506,7 +7506,7 @@ pub const Instruction = packed union {
                 decoded17: u5 = 0b10000,
                 size: Size,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 decoded30: u2 = 0b01,
             };
 
@@ -7519,7 +7519,7 @@ pub const Instruction = packed union {
                 decoded17: u5 = 0b10000,
                 size: Size,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 decoded30: u2 = 0b01,
             };
 
@@ -7533,7 +7533,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 decoded30: u2 = 0b01,
             };
 
@@ -7547,7 +7547,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 decoded30: u2 = 0b01,
             };
 
@@ -7561,7 +7561,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 decoded30: u2 = 0b01,
             };
 
@@ -7575,7 +7575,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 decoded30: u2 = 0b01,
             };
 
@@ -7589,7 +7589,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 decoded30: u2 = 0b01,
             };
 
@@ -7603,7 +7603,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 decoded30: u2 = 0b01,
             };
 
@@ -7617,7 +7617,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 decoded30: u2 = 0b01,
             };
 
@@ -7631,7 +7631,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 decoded30: u2 = 0b01,
             };
 
@@ -7645,7 +7645,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 decoded30: u2 = 0b01,
             };
 
@@ -7659,7 +7659,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 decoded30: u2 = 0b01,
             };
 
@@ -7673,7 +7673,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 decoded30: u2 = 0b01,
             };
 
@@ -7686,7 +7686,7 @@ pub const Instruction = packed union {
                 decoded17: u5 = 0b10000,
                 size: Size,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 decoded30: u2 = 0b01,
             };
 
@@ -7699,7 +7699,7 @@ pub const Instruction = packed union {
                 decoded17: u5 = 0b10000,
                 size: Size,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 decoded30: u2 = 0b01,
             };
 
@@ -7712,7 +7712,7 @@ pub const Instruction = packed union {
                 decoded17: u5 = 0b10000,
                 size: Size,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 decoded30: u2 = 0b01,
             };
 
@@ -7725,7 +7725,7 @@ pub const Instruction = packed union {
                 decoded17: u5 = 0b10000,
                 size: Size,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 decoded30: u2 = 0b01,
             };
 
@@ -7738,7 +7738,7 @@ pub const Instruction = packed union {
                 decoded17: u5 = 0b10000,
                 size: Size,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 decoded30: u2 = 0b01,
             };
 
@@ -7751,7 +7751,7 @@ pub const Instruction = packed union {
                 decoded17: u5 = 0b10000,
                 size: Size,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 decoded30: u2 = 0b01,
             };
 
@@ -7764,7 +7764,7 @@ pub const Instruction = packed union {
                 decoded17: u5 = 0b10000,
                 size: Size,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 decoded30: u2 = 0b01,
             };
 
@@ -7778,7 +7778,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 decoded30: u2 = 0b01,
             };
 
@@ -7792,7 +7792,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 decoded30: u2 = 0b01,
             };
 
@@ -7806,7 +7806,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 decoded30: u2 = 0b01,
             };
 
@@ -7820,7 +7820,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 decoded30: u2 = 0b01,
             };
 
@@ -7834,7 +7834,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 decoded30: u2 = 0b01,
             };
 
@@ -7848,7 +7848,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 decoded30: u2 = 0b01,
             };
 
@@ -7862,7 +7862,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 decoded30: u2 = 0b01,
             };
 
@@ -7876,7 +7876,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 decoded30: u2 = 0b01,
             };
 
@@ -7890,7 +7890,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 decoded30: u2 = 0b01,
             };
 
@@ -7904,7 +7904,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 decoded30: u2 = 0b01,
             };
 
@@ -8045,7 +8045,7 @@ pub const Instruction = packed union {
                 decoded17: u5 = 0b11000,
                 size: Size,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness,
+                U: std.lang.Signedness,
                 decoded30: u2 = 0b01,
             };
 
@@ -8058,7 +8058,7 @@ pub const Instruction = packed union {
                 decoded17: u5 = 0b11000,
                 size: Size,
                 decoded24: u5 = 0b11110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 decoded30: u2 = 0b01,
             };
 
@@ -8262,7 +8262,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 a: u1,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness,
+                U: std.lang.Signedness,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8276,7 +8276,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8290,7 +8290,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8304,7 +8304,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8318,7 +8318,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8332,7 +8332,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8346,7 +8346,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8360,7 +8360,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8374,7 +8374,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8388,7 +8388,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8402,7 +8402,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8416,7 +8416,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8430,7 +8430,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8444,7 +8444,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8458,7 +8458,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8472,7 +8472,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8486,7 +8486,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8500,7 +8500,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8514,7 +8514,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8528,7 +8528,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8542,7 +8542,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8556,7 +8556,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8570,7 +8570,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8584,7 +8584,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8598,7 +8598,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8612,7 +8612,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8626,7 +8626,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8640,7 +8640,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8654,7 +8654,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8668,7 +8668,7 @@ pub const Instruction = packed union {
                 decoded17: u6 = 0b111100,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8814,7 +8814,7 @@ pub const Instruction = packed union {
                 decoded17: u5 = 0b10000,
                 size: Size,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness,
+                U: std.lang.Signedness,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8828,7 +8828,7 @@ pub const Instruction = packed union {
                 decoded17: u5 = 0b10000,
                 size: Size,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8842,7 +8842,7 @@ pub const Instruction = packed union {
                 decoded17: u5 = 0b10000,
                 size: Size,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8856,7 +8856,7 @@ pub const Instruction = packed union {
                 decoded17: u5 = 0b10000,
                 size: Size,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8870,7 +8870,7 @@ pub const Instruction = packed union {
                 decoded17: u5 = 0b10000,
                 size: Size,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8884,7 +8884,7 @@ pub const Instruction = packed union {
                 decoded17: u5 = 0b10000,
                 size: Size,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8898,7 +8898,7 @@ pub const Instruction = packed union {
                 decoded17: u5 = 0b10000,
                 size: Size,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8912,7 +8912,7 @@ pub const Instruction = packed union {
                 decoded17: u5 = 0b10000,
                 size: Size,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8926,7 +8926,7 @@ pub const Instruction = packed union {
                 decoded17: u5 = 0b10000,
                 size: Size,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8941,7 +8941,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8956,7 +8956,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8971,7 +8971,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -8986,7 +8986,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9001,7 +9001,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9016,7 +9016,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9031,7 +9031,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9046,7 +9046,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9061,7 +9061,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9076,7 +9076,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9091,7 +9091,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9106,7 +9106,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9121,7 +9121,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9136,7 +9136,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9151,7 +9151,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9165,7 +9165,7 @@ pub const Instruction = packed union {
                 decoded17: u5 = 0b10000,
                 size: Size,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9179,7 +9179,7 @@ pub const Instruction = packed union {
                 decoded17: u5 = 0b10000,
                 size: Size,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9193,7 +9193,7 @@ pub const Instruction = packed union {
                 decoded17: u5 = 0b10000,
                 size: Size,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9207,7 +9207,7 @@ pub const Instruction = packed union {
                 decoded17: u5 = 0b10000,
                 size: Size,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9221,7 +9221,7 @@ pub const Instruction = packed union {
                 decoded17: u5 = 0b10000,
                 size: Size,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9235,7 +9235,7 @@ pub const Instruction = packed union {
                 decoded17: u5 = 0b10000,
                 size: Size,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9249,7 +9249,7 @@ pub const Instruction = packed union {
                 decoded17: u5 = 0b10000,
                 size: Size,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9264,7 +9264,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9279,7 +9279,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9294,7 +9294,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9309,7 +9309,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9324,7 +9324,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9339,7 +9339,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9354,7 +9354,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b0,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9368,7 +9368,7 @@ pub const Instruction = packed union {
                 decoded17: u5 = 0b10000,
                 size: Size = .byte,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9383,7 +9383,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9398,7 +9398,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9413,7 +9413,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9428,7 +9428,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9443,7 +9443,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9458,7 +9458,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9473,7 +9473,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9488,7 +9488,7 @@ pub const Instruction = packed union {
                 sz: Sz,
                 o2: u1 = 0b1,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9670,7 +9670,7 @@ pub const Instruction = packed union {
                 decoded17: u5 = 0b11000,
                 size: Size,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness,
+                U: std.lang.Signedness,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9684,7 +9684,7 @@ pub const Instruction = packed union {
                 decoded17: u5 = 0b11000,
                 size: Size,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9726,7 +9726,7 @@ pub const Instruction = packed union {
                 decoded21: u1 = 0b1,
                 size: Size,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness,
+                U: std.lang.Signedness,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9741,7 +9741,7 @@ pub const Instruction = packed union {
                 decoded21: u1 = 0b1,
                 size: Size,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9756,7 +9756,7 @@ pub const Instruction = packed union {
                 decoded21: u1 = 0b1,
                 size: Size = .byte,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9771,7 +9771,7 @@ pub const Instruction = packed union {
                 decoded21: u1 = 0b1,
                 size: Size = .half,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9786,7 +9786,7 @@ pub const Instruction = packed union {
                 decoded21: u1 = 0b1,
                 size: Size = .single,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9801,7 +9801,7 @@ pub const Instruction = packed union {
                 decoded21: u1 = 0b1,
                 size: Size = .double,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .signed,
+                U: std.lang.Signedness = .signed,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9816,7 +9816,7 @@ pub const Instruction = packed union {
                 decoded21: u1 = 0b1,
                 size: Size = .byte,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9831,7 +9831,7 @@ pub const Instruction = packed union {
                 decoded21: u1 = 0b1,
                 size: Size = .half,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9846,7 +9846,7 @@ pub const Instruction = packed union {
                 decoded21: u1 = 0b1,
                 size: Size = .single,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -9861,7 +9861,7 @@ pub const Instruction = packed union {
                 decoded21: u1 = 0b1,
                 size: Size = .double,
                 decoded24: u5 = 0b01110,
-                U: std.builtin.Signedness = .unsigned,
+                U: std.lang.Signedness = .unsigned,
                 Q: Q,
                 decoded31: u1 = 0b0,
             };
@@ -11131,11 +11131,11 @@ pub const Instruction = packed union {
             double = 0b11,
 
             pub fn n(s: Size) Size {
-                return @enumFromInt(@intFromEnum(s) - 1);
+                return @fromBackingInt(@intCast(@backingInt(s) - 1));
             }
 
             pub fn w(s: Size) Size {
-                return @enumFromInt(@intFromEnum(s) + 1);
+                return @fromBackingInt(@intCast(@backingInt(s) + 1));
             }
 
             pub fn toScalarSize(s: Size) Register.ScalarSize {
@@ -12379,12 +12379,12 @@ pub const Instruction = packed union {
         switch (d.format) {
             else => unreachable,
             .scalar => |elem_size| {
-                assert(@intFromEnum(elem_size) <= @intFromEnum(Register.ScalarSize.double) and elem_size == n.format.element.size);
+                assert(@backingInt(elem_size) <= @backingInt(Register.ScalarSize.double) and elem_size == n.format.element.size);
                 return .{ .data_processing_vector = .{ .simd_scalar_copy = .{
                     .dup = .{
                         .Rd = d.alias.encode(.{ .V = true }),
                         .Rn = n.alias.encode(.{ .V = true }),
-                        .imm5 = @shlExact(@as(u5, n.format.element.index) << 1 | @as(u5, 0b1), @intFromEnum(elem_size)),
+                        .imm5 = @shlExact(@as(u5, n.format.element.index) << 1 | @as(u5, 0b1), @backingInt(elem_size)),
                     },
                 } } };
             },
@@ -12400,7 +12400,7 @@ pub const Instruction = packed union {
                                 .Rd = d.alias.encode(.{ .V = true }),
                                 .Rn = n.alias.encode(.{ .V = true }),
                                 .imm4 = .element,
-                                .imm5 = @shlExact(@as(u5, element.index) << 1 | @as(u5, 0b1), @intFromEnum(elem_size)),
+                                .imm5 = @shlExact(@as(u5, element.index) << 1 | @as(u5, 0b1), @backingInt(elem_size)),
                                 .Q = arrangement.size(),
                             },
                         } } };
@@ -12415,7 +12415,7 @@ pub const Instruction = packed union {
                                 .Rd = d.alias.encode(.{ .V = true }),
                                 .Rn = n.alias.encode(.{}),
                                 .imm4 = .general,
-                                .imm5 = @shlExact(@as(u5, 0b1), @intFromEnum(elem_size)),
+                                .imm5 = @shlExact(@as(u5, 0b1), @backingInt(elem_size)),
                                 .Q = arrangement.size(),
                             },
                         } } };
@@ -12867,7 +12867,7 @@ pub const Instruction = packed union {
                 .fcmp = .{
                     .opc0 = .register,
                     .Rn = n.alias.encode(.{ .V = true }),
-                    .Rm = @enumFromInt(0b00000),
+                    .Rm = @fromBackingInt(@intCast(0b00000)),
                     .ftype = .fromScalarSize(ftype),
                 },
             } } },
@@ -12892,7 +12892,7 @@ pub const Instruction = packed union {
                 .fcmpe = .{
                     .opc0 = .zero,
                     .Rn = n.alias.encode(.{ .V = true }),
-                    .Rm = @enumFromInt(0b00000),
+                    .Rm = @fromBackingInt(@intCast(0b00000)),
                     .ftype = .fromScalarSize(ftype),
                 },
             } } },
@@ -14194,8 +14194,8 @@ pub const Instruction = packed union {
                     .ins = .{
                         .Rd = d.alias.encode(.{ .V = true }),
                         .Rn = n.alias.encode(.{ .V = true }),
-                        .imm4 = .{ .element = element.index << @intCast(@intFromEnum(elem_size)) },
-                        .imm5 = (@as(u5, d.format.element.index) << 1 | @as(u5, 0b1) << 0) << @intFromEnum(elem_size),
+                        .imm4 = .{ .element = element.index << @intCast(@backingInt(elem_size)) },
+                        .imm5 = (@as(u5, d.format.element.index) << 1 | @as(u5, 0b1) << 0) << @backingInt(elem_size),
                         .op = .element,
                     },
                 } } };
@@ -14211,7 +14211,7 @@ pub const Instruction = packed union {
                         .Rd = d.alias.encode(.{ .V = true }),
                         .Rn = n.alias.encode(.{}),
                         .imm4 = .{ .general = .general },
-                        .imm5 = (@as(u5, d.format.element.index) << 1 | @as(u5, 0b1) << 0) << @intFromEnum(elem_size),
+                        .imm5 = (@as(u5, d.format.element.index) << 1 | @as(u5, 0b1) << 0) << @backingInt(elem_size),
                         .op = .general,
                     },
                 } } };
@@ -14246,7 +14246,7 @@ pub const Instruction = packed union {
                                 .Rt = t1.alias.encode(.{}),
                                 .Rn = post_index.base.alias.encode(.{ .sp = true }),
                                 .Rt2 = t2.alias.encode(.{}),
-                                .imm7 = @intCast(@shrExact(post_index.index, @as(u2, 2) + @intFromEnum(sf))),
+                                .imm7 = @intCast(@shrExact(post_index.index, @as(u2, 2) + @backingInt(sf))),
                                 .sf = sf,
                             },
                         } } } };
@@ -14258,7 +14258,7 @@ pub const Instruction = packed union {
                                 .Rt = t1.alias.encode(.{}),
                                 .Rn = pre_index.base.alias.encode(.{ .sp = true }),
                                 .Rt2 = t2.alias.encode(.{}),
-                                .imm7 = @intCast(@shrExact(pre_index.index, @as(u2, 2) + @intFromEnum(sf))),
+                                .imm7 = @intCast(@shrExact(pre_index.index, @as(u2, 2) + @backingInt(sf))),
                                 .sf = sf,
                             },
                         } } } };
@@ -14270,7 +14270,7 @@ pub const Instruction = packed union {
                                 .Rt = t1.alias.encode(.{}),
                                 .Rn = signed_offset.base.alias.encode(.{ .sp = true }),
                                 .Rt2 = t2.alias.encode(.{}),
-                                .imm7 = @intCast(@shrExact(signed_offset.offset, @as(u2, 2) + @intFromEnum(sf))),
+                                .imm7 = @intCast(@shrExact(signed_offset.offset, @as(u2, 2) + @backingInt(sf))),
                                 .sf = sf,
                             },
                         } } } };
@@ -14288,7 +14288,7 @@ pub const Instruction = packed union {
                                 .Rt = t1.alias.encode(.{ .V = true }),
                                 .Rn = post_index.base.alias.encode(.{ .sp = true }),
                                 .Rt2 = t2.alias.encode(.{ .V = true }),
-                                .imm7 = @intCast(@shrExact(post_index.index, @intFromEnum(vs))),
+                                .imm7 = @intCast(@shrExact(post_index.index, @backingInt(vs))),
                                 .opc = .encode(vs),
                             },
                         } } } };
@@ -14300,7 +14300,7 @@ pub const Instruction = packed union {
                                 .Rt = t1.alias.encode(.{ .V = true }),
                                 .Rn = signed_offset.base.alias.encode(.{ .sp = true }),
                                 .Rt2 = t2.alias.encode(.{ .V = true }),
-                                .imm7 = @intCast(@shrExact(signed_offset.offset, @intFromEnum(vs))),
+                                .imm7 = @intCast(@shrExact(signed_offset.offset, @backingInt(vs))),
                                 .opc = .encode(vs),
                             },
                         } } } };
@@ -14312,7 +14312,7 @@ pub const Instruction = packed union {
                                 .Rt = t1.alias.encode(.{ .V = true }),
                                 .Rn = pre_index.base.alias.encode(.{ .sp = true }),
                                 .Rt2 = t2.alias.encode(.{ .V = true }),
-                                .imm7 = @intCast(@shrExact(pre_index.index, @intFromEnum(vs))),
+                                .imm7 = @intCast(@shrExact(pre_index.index, @backingInt(vs))),
                                 .opc = .encode(vs),
                             },
                         } } } };
@@ -14377,7 +14377,7 @@ pub const Instruction = packed union {
                         .ldr = .{
                             .Rt = t.alias.encode(.{}),
                             .Rn = unsigned_offset.base.alias.encode(.{ .sp = true }),
-                            .imm12 = @intCast(@shrExact(unsigned_offset.offset, @as(u2, 2) + @intFromEnum(sf))),
+                            .imm12 = @intCast(@shrExact(unsigned_offset.offset, @as(u2, 2) + @backingInt(sf))),
                             .sf = sf,
                         },
                     } } } };
@@ -14455,7 +14455,7 @@ pub const Instruction = packed union {
                         .ldr = .{
                             .Rt = t.alias.encode(.{ .V = true }),
                             .Rn = unsigned_offset.base.alias.encode(.{ .sp = true }),
-                            .imm12 = @intCast(@shrExact(unsigned_offset.offset, @intFromEnum(vs))),
+                            .imm12 = @intCast(@shrExact(unsigned_offset.offset, @backingInt(vs))),
                             .opc1 = .encode(vs),
                             .size = .encode(vs),
                         },
@@ -14705,7 +14705,7 @@ pub const Instruction = packed union {
                         .Rt = t.alias.encode(.{}),
                         .Rn = post_index.base.alias.encode(.{ .sp = true }),
                         .imm9 = post_index.index,
-                        .opc0 = ~@intFromEnum(sf),
+                        .opc0 = ~@backingInt(sf),
                     },
                 } } } };
             },
@@ -14716,7 +14716,7 @@ pub const Instruction = packed union {
                         .Rt = t.alias.encode(.{}),
                         .Rn = pre_index.base.alias.encode(.{ .sp = true }),
                         .imm9 = pre_index.index,
-                        .opc0 = ~@intFromEnum(sf),
+                        .opc0 = ~@backingInt(sf),
                     },
                 } } } };
             },
@@ -14727,7 +14727,7 @@ pub const Instruction = packed union {
                         .Rt = t.alias.encode(.{}),
                         .Rn = unsigned_offset.base.alias.encode(.{ .sp = true }),
                         .imm12 = unsigned_offset.offset,
-                        .opc0 = ~@intFromEnum(sf),
+                        .opc0 = ~@backingInt(sf),
                     },
                 } } } };
             },
@@ -14745,7 +14745,7 @@ pub const Instruction = packed union {
                         },
                         .option = extended_register_explicit.option,
                         .Rm = extended_register_explicit.index.alias.encode(.{}),
-                        .opc0 = ~@intFromEnum(sf),
+                        .opc0 = ~@backingInt(sf),
                     },
                 } } } };
             },
@@ -14787,7 +14787,7 @@ pub const Instruction = packed union {
                         .Rt = t.alias.encode(.{}),
                         .Rn = post_index.base.alias.encode(.{ .sp = true }),
                         .imm9 = post_index.index,
-                        .opc0 = ~@intFromEnum(sf),
+                        .opc0 = ~@backingInt(sf),
                     },
                 } } } };
             },
@@ -14798,7 +14798,7 @@ pub const Instruction = packed union {
                         .Rt = t.alias.encode(.{}),
                         .Rn = pre_index.base.alias.encode(.{ .sp = true }),
                         .imm9 = pre_index.index,
-                        .opc0 = ~@intFromEnum(sf),
+                        .opc0 = ~@backingInt(sf),
                     },
                 } } } };
             },
@@ -14809,7 +14809,7 @@ pub const Instruction = packed union {
                         .Rt = t.alias.encode(.{}),
                         .Rn = unsigned_offset.base.alias.encode(.{ .sp = true }),
                         .imm12 = @intCast(@shrExact(unsigned_offset.offset, 1)),
-                        .opc0 = ~@intFromEnum(sf),
+                        .opc0 = ~@backingInt(sf),
                     },
                 } } } };
             },
@@ -14828,7 +14828,7 @@ pub const Instruction = packed union {
                         },
                         .option = extended_register_explicit.option,
                         .Rm = extended_register_explicit.index.alias.encode(.{}),
-                        .opc0 = ~@intFromEnum(sf),
+                        .opc0 = ~@backingInt(sf),
                     },
                 } } } };
             },
@@ -14984,7 +14984,7 @@ pub const Instruction = packed union {
                 .Rt = t.alias.encode(.{}),
                 .Rn = n.alias.encode(.{ .sp = true }),
                 .imm9 = simm,
-                .opc0 = ~@intFromEnum(t.format.general),
+                .opc0 = ~@backingInt(t.format.general),
             },
         } } } };
     }
@@ -14996,7 +14996,7 @@ pub const Instruction = packed union {
                 .Rt = t.alias.encode(.{}),
                 .Rn = n.alias.encode(.{ .sp = true }),
                 .imm9 = simm,
-                .opc0 = ~@intFromEnum(t.format.general),
+                .opc0 = ~@backingInt(t.format.general),
             },
         } } } };
     }
@@ -15778,7 +15778,7 @@ pub const Instruction = packed union {
                                 .Rt = t1.alias.encode(.{}),
                                 .Rn = post_index.base.alias.encode(.{ .sp = true }),
                                 .Rt2 = t2.alias.encode(.{}),
-                                .imm7 = @intCast(@shrExact(post_index.index, @as(u2, 2) + @intFromEnum(sf))),
+                                .imm7 = @intCast(@shrExact(post_index.index, @as(u2, 2) + @backingInt(sf))),
                                 .sf = sf,
                             },
                         } } } };
@@ -15790,7 +15790,7 @@ pub const Instruction = packed union {
                                 .Rt = t1.alias.encode(.{}),
                                 .Rn = pre_index.base.alias.encode(.{ .sp = true }),
                                 .Rt2 = t2.alias.encode(.{}),
-                                .imm7 = @intCast(@shrExact(pre_index.index, @as(u2, 2) + @intFromEnum(sf))),
+                                .imm7 = @intCast(@shrExact(pre_index.index, @as(u2, 2) + @backingInt(sf))),
                                 .sf = sf,
                             },
                         } } } };
@@ -15802,7 +15802,7 @@ pub const Instruction = packed union {
                                 .Rt = t1.alias.encode(.{}),
                                 .Rn = signed_offset.base.alias.encode(.{ .sp = true }),
                                 .Rt2 = t2.alias.encode(.{}),
-                                .imm7 = @intCast(@shrExact(signed_offset.offset, @as(u2, 2) + @intFromEnum(sf))),
+                                .imm7 = @intCast(@shrExact(signed_offset.offset, @as(u2, 2) + @backingInt(sf))),
                                 .sf = sf,
                             },
                         } } } };
@@ -15820,7 +15820,7 @@ pub const Instruction = packed union {
                                 .Rt = t1.alias.encode(.{ .V = true }),
                                 .Rn = post_index.base.alias.encode(.{ .sp = true }),
                                 .Rt2 = t2.alias.encode(.{ .V = true }),
-                                .imm7 = @intCast(@shrExact(post_index.index, @intFromEnum(vs))),
+                                .imm7 = @intCast(@shrExact(post_index.index, @backingInt(vs))),
                                 .opc = .encode(vs),
                             },
                         } } } };
@@ -15832,7 +15832,7 @@ pub const Instruction = packed union {
                                 .Rt = t1.alias.encode(.{ .V = true }),
                                 .Rn = signed_offset.base.alias.encode(.{ .sp = true }),
                                 .Rt2 = t2.alias.encode(.{ .V = true }),
-                                .imm7 = @intCast(@shrExact(signed_offset.offset, @intFromEnum(vs))),
+                                .imm7 = @intCast(@shrExact(signed_offset.offset, @backingInt(vs))),
                                 .opc = .encode(vs),
                             },
                         } } } };
@@ -15844,7 +15844,7 @@ pub const Instruction = packed union {
                                 .Rt = t1.alias.encode(.{ .V = true }),
                                 .Rn = pre_index.base.alias.encode(.{ .sp = true }),
                                 .Rt2 = t2.alias.encode(.{ .V = true }),
-                                .imm7 = @intCast(@shrExact(pre_index.index, @intFromEnum(vs))),
+                                .imm7 = @intCast(@shrExact(pre_index.index, @backingInt(vs))),
                                 .opc = .encode(vs),
                             },
                         } } } };
@@ -15893,7 +15893,7 @@ pub const Instruction = packed union {
                         .str = .{
                             .Rt = t.alias.encode(.{}),
                             .Rn = unsigned_offset.base.alias.encode(.{ .sp = true }),
-                            .imm12 = @intCast(@shrExact(unsigned_offset.offset, @as(u2, 2) + @intFromEnum(sf))),
+                            .imm12 = @intCast(@shrExact(unsigned_offset.offset, @as(u2, 2) + @backingInt(sf))),
                             .sf = sf,
                         },
                     } } } };
@@ -15931,7 +15931,7 @@ pub const Instruction = packed union {
                         .str = .{
                             .Rt = t.alias.encode(.{ .V = true }),
                             .Rn = unsigned_offset.base.alias.encode(.{ .sp = true }),
-                            .imm12 = @intCast(@shrExact(unsigned_offset.offset, @intFromEnum(vs))),
+                            .imm12 = @intCast(@shrExact(unsigned_offset.offset, @backingInt(vs))),
                             .opc1 = .encode(vs),
                             .size = .encode(vs),
                         },
@@ -16561,30 +16561,30 @@ pub const Instruction = packed union {
                 if (info.layout != .@"packed" or @bitSizeOf(Type) != @bitSizeOf(Backing)) {
                     @compileLog(name ++ " should have u32 abi");
                 }
-                for (info.fields) |field| verify(name ++ "." ++ field.name, field.type);
+                for (info.field_names, info.field_types) |field_name, field_type| verify(name ++ "." ++ field_name, field_type);
             },
             .@"struct" => |info| {
                 if (info.layout != .@"packed" or info.backing_integer != Backing) {
                     @compileLog(name ++ " should have u32 abi");
                 }
                 var bit_offset = 0;
-                for (info.fields) |field| {
-                    if (std.mem.startsWith(u8, field.name, "encoded")) {
-                        if (if (std.fmt.parseInt(u5, field.name["encoded".len..], 10)) |encoded_bit_offset| encoded_bit_offset != bit_offset else |_| true) {
-                            @compileError(std.fmt.comptimePrint("{s}.{s} should be named encoded{d}", .{ name, field.name, bit_offset }));
+                for (info.field_names, info.field_types, info.field_attrs) |field_name, field_type, field_attrs| {
+                    if (std.mem.startsWith(u8, field_name, "encoded")) {
+                        if (if (std.fmt.parseInt(u5, field_name["encoded".len..], 10)) |encoded_bit_offset| encoded_bit_offset != bit_offset else |_| true) {
+                            @compileError(std.fmt.comptimePrint("{s}.{s} should be named encoded{d}", .{ name, field_name, bit_offset }));
                         }
-                        if (field.default_value_ptr != null) {
-                            @compileError(std.fmt.comptimePrint("{s}.{s} should be named decoded{d}", .{ name, field.name, bit_offset }));
+                        if (field_attrs.default_value_ptr != null) {
+                            @compileError(std.fmt.comptimePrint("{s}.{s} should be named decoded{d}", .{ name, field_name, bit_offset }));
                         }
-                    } else if (std.mem.startsWith(u8, field.name, "decoded")) {
-                        if (if (std.fmt.parseInt(u5, field.name["decoded".len..], 10)) |decoded_bit_offset| decoded_bit_offset != bit_offset else |_| true) {
-                            @compileError(std.fmt.comptimePrint("{s}.{s} should be named decoded{d}", .{ name, field.name, bit_offset }));
+                    } else if (std.mem.startsWith(u8, field_name, "decoded")) {
+                        if (if (std.fmt.parseInt(u5, field_name["decoded".len..], 10)) |decoded_bit_offset| decoded_bit_offset != bit_offset else |_| true) {
+                            @compileError(std.fmt.comptimePrint("{s}.{s} should be named decoded{d}", .{ name, field_name, bit_offset }));
                         }
-                        if (field.default_value_ptr == null) {
-                            @compileError(std.fmt.comptimePrint("{s}.{s} should be named encoded{d}", .{ name, field.name, bit_offset }));
+                        if (field_attrs.default_value_ptr == null) {
+                            @compileError(std.fmt.comptimePrint("{s}.{s} should be named encoded{d}", .{ name, field_name, bit_offset }));
                         }
                     }
-                    bit_offset += @bitSizeOf(field.type);
+                    bit_offset += @bitSizeOf(field_type);
                 }
             },
             else => @compileError(name ++ " has an unexpected field type"),

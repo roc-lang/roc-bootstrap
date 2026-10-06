@@ -191,15 +191,16 @@ pub fn HashMap(
         /// cause an existing key or value pointer to become invalidated will
         /// instead trigger an assertion.
         ///
-        /// An additional call to `lockPointers` in such state also triggers an
-        /// assertion.
+        /// `lockPointers` may be called multiple times. This allows multiple
+        /// independent users of the hash map to keep it locked simultaneously.
         ///
-        /// `unlockPointers` returns the hash map to the previous state.
+        /// `unlockPointers` restores the hash map to its previous state when
+        /// called the same number of times as `lockPointers`.
         pub fn lockPointers(self: *Self) void {
             self.unmanaged.lockPointers();
         }
 
-        /// Undoes a call to `lockPointers`.
+        /// Undoes one call to `lockPointers`.
         pub fn unlockPointers(self: *Self) void {
             self.unmanaged.unlockPointers();
         }
@@ -502,7 +503,8 @@ pub fn HashMap(
 /// Deletions are achieved with tombstones.
 ///
 /// Default initialization of this struct is deprecated; use `.empty` instead.
-pub fn HashMapUnmanaged(
+pub const HashMapUnmanaged = Custom;
+fn Custom(
     comptime K: type,
     comptime V: type,
     comptime Context: type,
@@ -592,8 +594,8 @@ pub fn HashMapUnmanaged(
             fingerprint: FingerPrint = free,
             used: u1 = 0,
 
-            const slot_free = @as(u8, @bitCast(Metadata{ .fingerprint = free }));
-            const slot_tombstone = @as(u8, @bitCast(Metadata{ .fingerprint = tombstone }));
+            const slot_free: u8 = @bitCast(Metadata{ .fingerprint = free });
+            const slot_tombstone: u8 = @bitCast(Metadata{ .fingerprint = tombstone });
 
             pub fn isUsed(self: Metadata) bool {
                 return self.used == 1;
@@ -708,17 +710,18 @@ pub fn HashMapUnmanaged(
         /// cause an existing key or value pointer to become invalidated will
         /// instead trigger an assertion.
         ///
-        /// An additional call to `lockPointers` in such state also triggers an
-        /// assertion.
+        /// `lockPointers` may be called multiple times. This allows multiple
+        /// independent users of the hash map to keep it locked simultaneously.
         ///
-        /// `unlockPointers` returns the hash map to the previous state.
+        /// `unlockPointers` restores the hash map to its previous state when
+        /// called the same number of times as `lockPointers`.
         pub fn lockPointers(self: *Self) void {
-            self.pointer_stability.lock();
+            self.pointer_stability.lockShared();
         }
 
-        /// Undoes a call to `lockPointers`.
+        /// Undoes one call to `lockPointers`.
         pub fn unlockPointers(self: *Self) void {
-            self.pointer_stability.unlock();
+            self.pointer_stability.unlockShared();
         }
 
         fn isUnderMaxLoadPercentage(size: Size, cap: Size) bool {
@@ -1271,7 +1274,7 @@ pub fn HashMapUnmanaged(
             // map, which is assumed to exist as key_ptr must be valid.  This
             // item must be at index 0.
             const idx = if (@sizeOf(K) > 0)
-                (key_ptr - self.keys())
+                @as([*]K, @ptrCast(key_ptr)) - self.keys()
             else
                 0;
 
@@ -1517,7 +1520,7 @@ pub fn HashMapUnmanaged(
             self.available = 0;
         }
 
-        /// This function is used in the debugger pretty formatters in tools/ to fetch the
+        /// This function is used in the debugger pretty formatters in lib/lldb/ to fetch the
         /// header type to facilitate fancy debug printing for this type.
         fn dbHelper(self: *Self, hdr: *Header, entry: *Entry) void {
             _ = self;
@@ -2174,4 +2177,23 @@ test "rehash" {
             try expectEqual(map.get(i).?, i);
         }
     }
+}
+
+test "removeByPtr, key is array" {
+    const gpa = testing.allocator;
+
+    var map: AutoHashMapUnmanaged([2]u32, u32) = .empty;
+    defer map.deinit(gpa);
+
+    const key: [2]u32 = .{ 1, 2 };
+    try map.put(gpa, key, 3);
+
+    try expectEqual(1, map.count());
+    try expectEqual(3, map.get(key));
+
+    const key_ptr = map.getKeyPtr(key).?;
+    map.removeByPtr(key_ptr);
+
+    try expectEqual(0, map.count());
+    try expectEqual(null, map.get(key));
 }

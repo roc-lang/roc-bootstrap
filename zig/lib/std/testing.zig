@@ -17,19 +17,8 @@ var failing_allocator_instance = FailingAllocator.init(base_allocator_instance.a
 });
 var base_allocator_instance = std.heap.FixedBufferAllocator.init("");
 
-/// This should only be used in temporary test programs.
-pub const allocator = allocator_instance.allocator();
-pub var allocator_instance: std.heap.DebugAllocator(.{
-    .stack_trace_frames = if (std.debug.sys_can_stack_trace) 10 else 0,
-    .resize_stack_traces = true,
-    // A unique value so that when a default-constructed
-    // DebugAllocator is incorrectly passed to testing allocator, or
-    // vice versa, panic occurs.
-    .canary = @truncate(0x2731e675c3a701ba),
-}) = b: {
-    if (!builtin.is_test) @compileError("testing allocator used when not testing");
-    break :b .init;
-};
+pub var allocator_instance: std.heap.SafeAllocator = undefined;
+pub const allocator = if (builtin.is_test) allocator_instance.allocator() else @compileError("not testing");
 
 pub var io_instance: Io.Threaded = undefined;
 pub const io = if (builtin.is_test) io_instance.io() else @compileError("not testing");
@@ -42,6 +31,7 @@ pub var log_level = std.log.Level.warn;
 // Disable printing in tests for simple backends.
 pub const backend_can_print = switch (builtin.zig_backend) {
     .stage2_aarch64,
+    .stage2_loongarch,
     .stage2_powerpc,
     .stage2_riscv64,
     .stage2_spirv,
@@ -49,28 +39,12 @@ pub const backend_can_print = switch (builtin.zig_backend) {
     else => true,
 };
 
-fn print(comptime fmt: []const u8, args: anytype) void {
+/// Helper function for printing test failure information.
+pub fn failPrint(comptime fmt: []const u8, args: anytype) void {
     if (@inComptime()) {
         @compileError(std.fmt.comptimePrint(fmt, args));
     } else if (backend_can_print) {
         std.debug.print(fmt, args);
-    }
-}
-
-/// This function is intended to be used only in tests. It prints diagnostics to stderr
-/// and then returns a test failure error when actual_error_union is not expected_error.
-pub fn expectError(expected_error: anyerror, actual_error_union: anytype) !void {
-    if (actual_error_union) |actual_payload| {
-        print("expected error.{s}, found {any}\n", .{ @errorName(expected_error), actual_payload });
-        return error.TestExpectedError;
-    } else |actual_error| {
-        if (expected_error != actual_error) {
-            print("expected error.{s}, found error.{s}\n", .{
-                @errorName(expected_error),
-                @errorName(actual_error),
-            });
-            return error.TestUnexpectedError;
-        }
     }
 }
 
@@ -87,6 +61,7 @@ fn expectEqualInner(comptime T: type, expected: T, actual: T) !void {
     switch (@typeInfo(@TypeOf(actual))) {
         .noreturn,
         .@"opaque",
+        .spirv,
         .frame,
         .@"anyframe",
         => @compileError("value of type " ++ @typeName(@TypeOf(actual)) ++ " encountered"),
@@ -98,7 +73,7 @@ fn expectEqualInner(comptime T: type, expected: T, actual: T) !void {
 
         .type => {
             if (actual != expected) {
-                print("expected type {s}, found type {s}\n", .{ @typeName(expected), @typeName(actual) });
+                failPrint("expected type {s}, found type {s}\n", .{ @typeName(expected), @typeName(actual) });
                 return error.TestExpectedEqual;
             }
         },
@@ -114,7 +89,7 @@ fn expectEqualInner(comptime T: type, expected: T, actual: T) !void {
         .error_set,
         => {
             if (actual != expected) {
-                print("expected {any}, found {any}\n", .{ expected, actual });
+                failPrint("expected {any}, found {any}\n", .{ expected, actual });
                 return error.TestExpectedEqual;
             }
         },
@@ -123,17 +98,17 @@ fn expectEqualInner(comptime T: type, expected: T, actual: T) !void {
             switch (pointer.size) {
                 .one, .many, .c => {
                     if (actual != expected) {
-                        print("expected {*}, found {*}\n", .{ expected, actual });
+                        failPrint("expected {*}, found {*}\n", .{ expected, actual });
                         return error.TestExpectedEqual;
                     }
                 },
                 .slice => {
                     if (actual.ptr != expected.ptr) {
-                        print("expected slice ptr {*}, found {*}\n", .{ expected.ptr, actual.ptr });
+                        failPrint("expected slice ptr {*}, found {*}\n", .{ expected.ptr, actual.ptr });
                         return error.TestExpectedEqual;
                     }
                     if (actual.len != expected.len) {
-                        print("expected slice len {}, found {}\n", .{ expected.len, actual.len });
+                        failPrint("expected slice len {}, found {}\n", .{ expected.len, actual.len });
                         return error.TestExpectedEqual;
                     }
                 },
@@ -148,39 +123,45 @@ fn expectEqualInner(comptime T: type, expected: T, actual: T) !void {
             try expectEqualSlices(info.child, &expect_array, &actual_array);
         },
 
-        .@"struct" => |structType| {
-            inline for (structType.fields) |field| {
-                try expectEqual(@field(expected, field.name), @field(actual, field.name));
+        .@"struct" => |@"struct"| {
+            inline for (@"struct".field_names) |field_name| {
+                try expectEqual(@field(expected, field_name), @field(actual, field_name));
             }
         },
 
-        .@"union" => |union_info| {
-            if (union_info.tag_type == null) {
-                const first_size = @bitSizeOf(union_info.fields[0].type);
-                inline for (union_info.fields) |field| {
-                    if (@bitSizeOf(field.type) != first_size) {
-                        @compileError("Unable to compare untagged unions with varying field sizes for type " ++ @typeName(@TypeOf(actual)));
+        .@"union" => |@"union"| if (@"union".backing_integer) |Int| {
+            try expectEqual(@as(Int, @bitCast(expected)), @as(Int, @bitCast(actual)));
+        } else switch (@"union".layout) {
+            .@"packed" => {
+                const Int = @Int(.unsigned, @bitSizeOf(T));
+                try expectEqual(@as(Int, @bitCast(expected)), @as(Int, @bitCast(actual)));
+            },
+            .@"extern" => {
+                const first_size = @bitSizeOf(@"union".field_types[0]);
+                inline for (@"union".field_types) |field_type| {
+                    if (@bitSizeOf(field_type) != first_size) {
+                        @compileError("Unable to compare extern unions with varying field sizes for type " ++ @typeName(T));
                     }
                 }
-
-                const BackingInt = std.meta.Int(.unsigned, @bitSizeOf(T));
+                const FieldInt = @Int(.unsigned, first_size);
+                const expected_field = @field(expected, @"union".field_names[0]);
+                const actual_field = @field(actual, @"union".field_names[0]);
                 return expectEqual(
-                    @as(BackingInt, @bitCast(expected)),
-                    @as(BackingInt, @bitCast(actual)),
+                    @as(FieldInt, @bitCast(expected_field)),
+                    @as(FieldInt, @bitCast(actual_field)),
                 );
-            }
+            },
+            .auto => {
+                const Tag = @"union".tag_type orelse @compileError("byteSwapAllFields expects packed, extern, or tagged union");
 
-            const Tag = std.meta.Tag(@TypeOf(expected));
-
-            const expectedTag = @as(Tag, expected);
-            const actualTag = @as(Tag, actual);
-
-            try expectEqual(expectedTag, actualTag);
-
-            // we only reach this switch if the tags are equal
-            switch (expected) {
-                inline else => |val, tag| try expectEqual(val, @field(actual, @tagName(tag))),
-            }
+                try expectEqual(@as(Tag, expected), @as(Tag, actual));
+                switch (expected) {
+                    inline else => |expected_payload, tag| {
+                        const actual_payload = @field(actual, @tagName(tag));
+                        try expectEqual(expected_payload, actual_payload);
+                    },
+                }
+            },
         },
 
         .optional => {
@@ -188,12 +169,12 @@ fn expectEqualInner(comptime T: type, expected: T, actual: T) !void {
                 if (actual) |actual_payload| {
                     try expectEqual(expected_payload, actual_payload);
                 } else {
-                    print("expected {any}, found null\n", .{expected_payload});
+                    failPrint("expected {any}, found null\n", .{expected_payload});
                     return error.TestExpectedEqual;
                 }
             } else {
                 if (actual) |actual_payload| {
-                    print("expected null, found {any}\n", .{actual_payload});
+                    failPrint("expected null, found {any}\n", .{actual_payload});
                     return error.TestExpectedEqual;
                 }
             }
@@ -204,12 +185,12 @@ fn expectEqualInner(comptime T: type, expected: T, actual: T) !void {
                 if (actual) |actual_payload| {
                     try expectEqual(expected_payload, actual_payload);
                 } else |actual_err| {
-                    print("expected {any}, found {}\n", .{ expected_payload, actual_err });
+                    failPrint("expected {any}, found {}\n", .{ expected_payload, actual_err });
                     return error.TestExpectedEqual;
                 }
             } else |expected_err| {
                 if (actual) |actual_payload| {
-                    print("expected {}, found {any}\n", .{ expected_err, actual_payload });
+                    failPrint("expected {}, found {any}\n", .{ expected_err, actual_payload });
                     return error.TestExpectedEqual;
                 } else |actual_err| {
                     try expectEqual(expected_err, actual_err);
@@ -219,7 +200,7 @@ fn expectEqualInner(comptime T: type, expected: T, actual: T) !void {
     }
 }
 
-test "expectEqual.union(enum)" {
+test "expectEqual union(enum)" {
     const T = union(enum) {
         a: i32,
         b: f32,
@@ -268,20 +249,6 @@ test "expectEqual null" {
     try expectEqual(a, b);
 }
 
-/// This function is intended to be used only in tests. When the formatted result of the template
-/// and its arguments does not equal the expected text, it prints diagnostics to stderr to show how
-/// they are not equal, then returns an error. It depends on `expectEqualStrings` for printing
-/// diagnostics.
-pub fn expectFmt(expected: []const u8, comptime template: []const u8, args: anytype) !void {
-    if (@inComptime()) {
-        var buffer: [std.fmt.count(template, args)]u8 = undefined;
-        return expectEqualStrings(expected, try std.fmt.bufPrint(&buffer, template, args));
-    }
-    const actual = try std.fmt.allocPrint(allocator, template, args);
-    defer allocator.free(actual);
-    return expectEqualStrings(expected, actual);
-}
-
 /// This function is intended to be used only in tests. When the actual value is
 /// not approximately equal to the expected value, prints diagnostics to stderr
 /// to show exactly how they are not equal, then returns a test failure error.
@@ -296,7 +263,7 @@ pub inline fn expectApproxEqAbs(expected: anytype, actual: anytype, tolerance: a
 fn expectApproxEqAbsInner(comptime T: type, expected: T, actual: T, tolerance: T) !void {
     switch (@typeInfo(T)) {
         .float => if (!math.approxEqAbs(T, expected, actual, tolerance)) {
-            print("actual {}, not within absolute tolerance {} of expected {}\n", .{ actual, tolerance, expected });
+            failPrint("actual {}, not within absolute tolerance {} of expected {}\n", .{ actual, tolerance, expected });
             return error.TestExpectedApproxEqAbs;
         },
 
@@ -332,7 +299,7 @@ pub inline fn expectApproxEqRel(expected: anytype, actual: anytype, tolerance: a
 fn expectApproxEqRelInner(comptime T: type, expected: T, actual: T, tolerance: T) !void {
     switch (@typeInfo(T)) {
         .float => if (!math.approxEqRel(T, expected, actual, tolerance)) {
-            print("actual {}, not within relative tolerance {} of expected {}\n", .{ actual, tolerance, expected });
+            failPrint("actual {}, not within relative tolerance {} of expected {}\n", .{ actual, tolerance, expected });
             return error.TestExpectedApproxEqRel;
         },
 
@@ -358,7 +325,7 @@ test expectApproxEqRel {
 }
 
 /// This function is intended to be used only in tests. When the two slices are
-/// not equal, prints diagnostics to stderr to show exactly how they are not
+/// not equal, it prints diagnostics to stderr to show exactly how they are not
 /// equal (with the differences highlighted in red), then returns a test
 /// failure error.
 pub fn expectEqualSlices(comptime T: type, expected: []const T, actual: []const T) !void {
@@ -501,7 +468,7 @@ const BytesDiffer = struct {
         var row: usize = 0;
         while (expected_iterator.next()) |chunk| {
             // to avoid having to calculate diffs twice per chunk
-            var diffs: std.bit_set.IntegerBitSet(16) = .{ .mask = 0 };
+            var diffs: std.bit_set.Integer(16) = .{ .mask = 0 };
             for (chunk, 0..) |byte, col| {
                 const absolute_byte_index = col + row * 16;
                 const diff = if (absolute_byte_index < self.actual.len) self.actual[absolute_byte_index] != byte else true;
@@ -553,7 +520,7 @@ const BytesDiffer = struct {
     }
 };
 
-test {
+test expectEqualSlices {
     try expectEqualSlices(u8, "foo\x00", "foo\x00");
     try expectEqualSlices(u16, &[_]u16{ 100, 200, 300, 400 }, &[_]u16{ 100, 200, 300, 400 });
     const E = enum { foo, bar };
@@ -567,8 +534,10 @@ test {
     );
 }
 
-/// This function is intended to be used only in tests. Checks that two slices or two arrays are equal,
-/// including that their sentinel (if any) are the same. Will error if given another type.
+/// This function is intended to be used only in tests. When the two slices or two arrays are not equal,
+/// or their sentinel (if any) are not the same, it prints diagnostics to stderr to show exactly how
+/// they are not equal (with the differences highlighted in red), then returns a test failure error.
+/// It partially depends on `expectEquaSlices` for printing diagnostics.
 pub fn expectEqualSentinel(comptime T: type, comptime sentinel: T, expected: [:sentinel]const T, actual: [:sentinel]const T) !void {
     try expectEqualSlices(T, expected, actual);
 
@@ -599,12 +568,12 @@ pub fn expectEqualSentinel(comptime T: type, comptime sentinel: T, expected: [:s
     };
 
     if (!std.meta.eql(sentinel, expected_value_sentinel)) {
-        print("expectEqualSentinel: 'expected' sentinel in memory is different from its type sentinel. type sentinel {}, in memory sentinel {}\n", .{ sentinel, expected_value_sentinel });
+        failPrint("expectEqualSentinel: 'expected' sentinel in memory is different from its type sentinel. type sentinel {}, in memory sentinel {}\n", .{ sentinel, expected_value_sentinel });
         return error.TestExpectedEqual;
     }
 
     if (!std.meta.eql(sentinel, actual_value_sentinel)) {
-        print("expectEqualSentinel: 'actual' sentinel in memory is different from its type sentinel. type sentinel {}, in memory sentinel {}\n", .{ sentinel, actual_value_sentinel });
+        failPrint("expectEqualSentinel: 'actual' sentinel in memory is different from its type sentinel. type sentinel {}, in memory sentinel {}\n", .{ sentinel, actual_value_sentinel });
         return error.TestExpectedEqual;
     }
 }
@@ -622,6 +591,9 @@ pub const TmpDir = struct {
 
     const random_bytes_count = 12;
     const sub_path_len = std.base64.url_safe.Encoder.calcSize(random_bytes_count);
+
+    /// Deprecated.
+    pub const parent_dir_path: []const u8 = ".zig-cache" ++ std.fs.path.sep_str ++ "tmp";
 
     pub fn cleanup(self: *TmpDir) void {
         self.dir.close(io);
@@ -654,6 +626,48 @@ pub fn tmpDir(opts: Io.Dir.OpenOptions) TmpDir {
     };
 }
 
+/// This function is intended to be used only in tests. When `actual_error_union` is not
+/// `expected_error`, it prints diagnostics to stderr, then returns a test failure error.
+pub fn expectError(expected_error: anyerror, actual_error_union: anytype) !void {
+    if (actual_error_union) |actual_payload| {
+        failPrint("expected error.{s}, found {any}\n", .{ @errorName(expected_error), actual_payload });
+        return error.TestExpectedError;
+    } else |actual_error| {
+        if (expected_error != actual_error) {
+            failPrint("expected error.{s}, found error.{s}\n", .{
+                @errorName(expected_error),
+                @errorName(actual_error),
+            });
+            return error.TestUnexpectedError;
+        }
+    }
+}
+
+fn returnErrorUnion() !u8 {
+    return error.Expected;
+}
+
+test expectError {
+    const actualErrorUnion = returnErrorUnion();
+    try expectError(error.Expected, actualErrorUnion);
+}
+
+/// This function is intended to be used only in tests. When the formatted result of the template
+/// and its arguments does not equal the expected text, it prints diagnostics to stderr to show how
+/// they are not equal, then returns an error. It depends on `expectEqualStrings` for printing
+/// diagnostics.
+pub fn expectFmt(expected: []const u8, comptime template: []const u8, args: anytype) !void {
+    if (@inComptime()) {
+        var buffer: [std.fmt.count(template, args)]u8 = undefined;
+        return expectEqualStrings(expected, try std.mem.print(&buffer, template, args));
+    }
+    const actual = try std.fmt.allocPrint(allocator, template, args);
+    defer allocator.free(actual);
+    return expectEqualStrings(expected, actual);
+}
+
+// This function is intended to be used only in test. When the two strings are not equal,
+/// it prints diagnostics to stderr to show how they are not equal, then returns an error.
 pub fn expectEqualStrings(expected: []const u8, actual: []const u8) !void {
     if (std.mem.findDiff(u8, actual, expected)) |diff_index| {
         if (@inComptime()) {
@@ -661,28 +675,34 @@ pub fn expectEqualStrings(expected: []const u8, actual: []const u8) !void {
                 expected, actual, diff_index,
             }));
         }
-        print("\n====== expected this output: =========\n", .{});
-        printWithVisibleNewlines(expected);
-        print("\n======== instead found this: =========\n", .{});
-        printWithVisibleNewlines(actual);
-        print("\n======================================\n", .{});
+        failPrint("\n====== expected this output: =========\n", .{});
+        failPrintWithVisibleNewlines(expected);
+        failPrint("\n======== instead found this: =========\n", .{});
+        failPrintWithVisibleNewlines(actual);
+        failPrint("\n======================================\n", .{});
 
         var diff_line_number: usize = 1;
         for (expected[0..diff_index]) |value| {
             if (value == '\n') diff_line_number += 1;
         }
-        print("First difference occurs on line {d}:\n", .{diff_line_number});
+        failPrint("First difference occurs on line {d}:\n", .{diff_line_number});
 
-        print("expected:\n", .{});
-        printIndicatorLine(expected, diff_index);
+        failPrint("expected:\n", .{});
+        failPrintIndicatorLine(expected, diff_index);
 
-        print("found:\n", .{});
-        printIndicatorLine(actual, diff_index);
+        failPrint("found:\n", .{});
+        failPrintIndicatorLine(actual, diff_index);
 
         return error.TestExpectedEqual;
     }
 }
 
+test expectEqualStrings {
+    try expectEqualStrings("foo", "foo");
+}
+
+/// This function is intended to be used only in test. When the start of `actual` and `expected_starts_with`
+/// are not equal, it prints diagnostics to stderr to show how they are not equal, then returns an error.
 pub fn expectStringStartsWith(actual: []const u8, expected_starts_with: []const u8) !void {
     if (std.mem.startsWith(u8, actual, expected_starts_with))
         return;
@@ -692,17 +712,23 @@ pub fn expectStringStartsWith(actual: []const u8, expected_starts_with: []const 
     else
         actual;
 
-    print("\n====== expected to start with: =========\n", .{});
-    printWithVisibleNewlines(expected_starts_with);
-    print("\n====== instead started with: ===========\n", .{});
-    printWithVisibleNewlines(shortened_actual);
-    print("\n========= full output: ==============\n", .{});
-    printWithVisibleNewlines(actual);
-    print("\n======================================\n", .{});
+    failPrint("\n====== expected to start with: =========\n", .{});
+    failPrintWithVisibleNewlines(expected_starts_with);
+    failPrint("\n====== instead started with: ===========\n", .{});
+    failPrintWithVisibleNewlines(shortened_actual);
+    failPrint("\n========= full output: ==============\n", .{});
+    failPrintWithVisibleNewlines(actual);
+    failPrint("\n======================================\n", .{});
 
     return error.TestExpectedStartsWith;
 }
 
+test expectStringStartsWith {
+    try expectStringStartsWith("foobar", "foo");
+}
+
+/// This function is intended to be used only in test. When the end of `actual` and `expected_ends_with`
+/// are not equal, it prints diagnostics to stderr to show how they are not equal, then returns an error.
 pub fn expectStringEndsWith(actual: []const u8, expected_ends_with: []const u8) !void {
     if (std.mem.endsWith(u8, actual, expected_ends_with))
         return;
@@ -712,15 +738,19 @@ pub fn expectStringEndsWith(actual: []const u8, expected_ends_with: []const u8) 
     else
         actual;
 
-    print("\n====== expected to end with: =========\n", .{});
-    printWithVisibleNewlines(expected_ends_with);
-    print("\n====== instead ended with: ===========\n", .{});
-    printWithVisibleNewlines(shortened_actual);
-    print("\n========= full output: ==============\n", .{});
-    printWithVisibleNewlines(actual);
-    print("\n======================================\n", .{});
+    failPrint("\n====== expected to end with: =========\n", .{});
+    failPrintWithVisibleNewlines(expected_ends_with);
+    failPrint("\n====== instead ended with: ===========\n", .{});
+    failPrintWithVisibleNewlines(shortened_actual);
+    failPrint("\n========= full output: ==============\n", .{});
+    failPrintWithVisibleNewlines(actual);
+    failPrint("\n======================================\n", .{});
 
     return error.TestExpectedEndsWith;
+}
+
+test expectStringEndsWith {
+    try expectStringEndsWith("foobar", "bar");
 }
 
 /// This function is intended to be used only in tests. When the two values are not
@@ -745,6 +775,7 @@ fn expectEqualDeepInner(comptime T: type, expected: T, actual: T) error{TestExpe
     switch (@typeInfo(@TypeOf(actual))) {
         .noreturn,
         .@"opaque",
+        .spirv,
         .frame,
         .@"anyframe",
         => @compileError("value of type " ++ @typeName(@TypeOf(actual)) ++ " encountered"),
@@ -756,7 +787,7 @@ fn expectEqualDeepInner(comptime T: type, expected: T, actual: T) error{TestExpe
 
         .type => {
             if (actual != expected) {
-                print("expected type {s}, found type {s}\n", .{ @typeName(expected), @typeName(actual) });
+                failPrint("expected type {s}, found type {s}\n", .{ @typeName(expected), @typeName(actual) });
                 return error.TestExpectedEqual;
             }
         },
@@ -772,7 +803,7 @@ fn expectEqualDeepInner(comptime T: type, expected: T, actual: T) error{TestExpe
         .error_set,
         => {
             if (actual != expected) {
-                print("expected {any}, found {any}\n", .{ expected, actual });
+                failPrint("expected {any}, found {any}\n", .{ expected, actual });
                 return error.TestExpectedEqual;
             }
         },
@@ -782,7 +813,7 @@ fn expectEqualDeepInner(comptime T: type, expected: T, actual: T) error{TestExpe
                 // We have no idea what is behind those pointers, so the best we can do is `==` check.
                 .c, .many => {
                     if (actual != expected) {
-                        print("expected {*}, found {*}\n", .{ expected, actual });
+                        failPrint("expected {*}, found {*}\n", .{ expected, actual });
                         return error.TestExpectedEqual;
                     }
                 },
@@ -791,7 +822,7 @@ fn expectEqualDeepInner(comptime T: type, expected: T, actual: T) error{TestExpe
                     switch (@typeInfo(pointer.child)) {
                         .@"fn", .@"opaque" => {
                             if (actual != expected) {
-                                print("expected {*}, found {*}\n", .{ expected, actual });
+                                failPrint("expected {*}, found {*}\n", .{ expected, actual });
                                 return error.TestExpectedEqual;
                             }
                         },
@@ -800,13 +831,13 @@ fn expectEqualDeepInner(comptime T: type, expected: T, actual: T) error{TestExpe
                 },
                 .slice => {
                     if (expected.len != actual.len) {
-                        print("Slice len not the same, expected {d}, found {d}\n", .{ expected.len, actual.len });
+                        failPrint("Slice len not the same, expected {d}, found {d}\n", .{ expected.len, actual.len });
                         return error.TestExpectedEqual;
                     }
                     var i: usize = 0;
                     while (i < expected.len) : (i += 1) {
                         expectEqualDeep(expected[i], actual[i]) catch |e| {
-                            print("index {d} incorrect. expected {any}, found {any}\n", .{
+                            failPrint("index {d} incorrect. expected {any}, found {any}\n", .{
                                 i, expected[i], actual[i],
                             });
                             return e;
@@ -818,13 +849,13 @@ fn expectEqualDeepInner(comptime T: type, expected: T, actual: T) error{TestExpe
 
         .array => {
             if (expected.len != actual.len) {
-                print("Array len not the same, expected {d}, found {d}\n", .{ expected.len, actual.len });
+                failPrint("Array len not the same, expected {d}, found {d}\n", .{ expected.len, actual.len });
                 return error.TestExpectedEqual;
             }
             var i: usize = 0;
             while (i < expected.len) : (i += 1) {
                 expectEqualDeep(expected[i], actual[i]) catch |e| {
-                    print("index {d} incorrect. expected {any}, found {any}\n", .{
+                    failPrint("index {d} incorrect. expected {any}, found {any}\n", .{
                         i, expected[i], actual[i],
                     });
                     return e;
@@ -834,12 +865,12 @@ fn expectEqualDeepInner(comptime T: type, expected: T, actual: T) error{TestExpe
 
         .vector => |info| {
             if (info.len != @typeInfo(@TypeOf(actual)).vector.len) {
-                print("Vector len not the same, expected {d}, found {d}\n", .{ info.len, @typeInfo(@TypeOf(actual)).vector.len });
+                failPrint("Vector len not the same, expected {d}, found {d}\n", .{ info.len, @typeInfo(@TypeOf(actual)).vector.len });
                 return error.TestExpectedEqual;
             }
             inline for (0..info.len) |i| {
                 expectEqualDeep(expected[i], actual[i]) catch |e| {
-                    print("index {d} incorrect. expected {any}, found {any}\n", .{
+                    failPrint("index {d} incorrect. expected {any}, found {any}\n", .{
                         i, expected[i], actual[i],
                     });
                     return e;
@@ -848,9 +879,9 @@ fn expectEqualDeepInner(comptime T: type, expected: T, actual: T) error{TestExpe
         },
 
         .@"struct" => |structType| {
-            inline for (structType.fields) |field| {
-                expectEqualDeep(@field(expected, field.name), @field(actual, field.name)) catch |e| {
-                    print("Field {s} incorrect. expected {any}, found {any}\n", .{ field.name, @field(expected, field.name), @field(actual, field.name) });
+            inline for (structType.field_names) |field_name| {
+                expectEqualDeep(@field(expected, field_name), @field(actual, field_name)) catch |e| {
+                    failPrint("Field {s} incorrect. expected {any}, found {any}\n", .{ field_name, @field(expected, field_name), @field(actual, field_name) });
                     return e;
                 };
             }
@@ -881,12 +912,12 @@ fn expectEqualDeepInner(comptime T: type, expected: T, actual: T) error{TestExpe
                 if (actual) |actual_payload| {
                     try expectEqualDeep(expected_payload, actual_payload);
                 } else {
-                    print("expected {any}, found null\n", .{expected_payload});
+                    failPrint("expected {any}, found null\n", .{expected_payload});
                     return error.TestExpectedEqual;
                 }
             } else {
                 if (actual) |actual_payload| {
-                    print("expected null, found {any}\n", .{actual_payload});
+                    failPrint("expected null, found {any}\n", .{actual_payload});
                     return error.TestExpectedEqual;
                 }
             }
@@ -897,12 +928,12 @@ fn expectEqualDeepInner(comptime T: type, expected: T, actual: T) error{TestExpe
                 if (actual) |actual_payload| {
                     try expectEqualDeep(expected_payload, actual_payload);
                 } else |actual_err| {
-                    print("expected {any}, found {any}\n", .{ expected_payload, actual_err });
+                    failPrint("expected {any}, found {any}\n", .{ expected_payload, actual_err });
                     return error.TestExpectedEqual;
                 }
             } else |expected_err| {
                 if (actual) |actual_payload| {
-                    print("expected {any}, found {any}\n", .{ expected_err, actual_payload });
+                    failPrint("expected {any}, found {any}\n", .{ expected_err, actual_payload });
                     return error.TestExpectedEqual;
                 } else |actual_err| {
                     try expectEqualDeep(expected_err, actual_err);
@@ -998,8 +1029,9 @@ test "expectEqualDeep composite type" {
     );
 }
 
-fn printIndicatorLine(source: []const u8, indicator_index: usize) void {
-    const line_begin_index = if (std.mem.lastIndexOfScalar(u8, source[0..indicator_index], '\n')) |line_begin|
+/// Helper function for printing test failure information.
+pub fn failPrintIndicatorLine(source: []const u8, indicator_index: usize) void {
+    const line_begin_index = if (std.mem.findScalarLast(u8, source[0..indicator_index], '\n')) |line_begin|
         line_begin + 1
     else
         0;
@@ -1008,33 +1040,31 @@ fn printIndicatorLine(source: []const u8, indicator_index: usize) void {
     else
         source.len;
 
-    printLine(source[line_begin_index..line_end_index]);
+    failPrintLine(source[line_begin_index..line_end_index]);
     for (line_begin_index..indicator_index) |_|
-        print(" ", .{});
+        failPrint(" ", .{});
     if (indicator_index >= source.len)
-        print("^ (end of string)\n", .{})
+        failPrint("^ (end of string)\n", .{})
     else
-        print("^ ('\\x{x:0>2}')\n", .{source[indicator_index]});
+        failPrint("^ ('\\x{x:0>2}')\n", .{source[indicator_index]});
 }
 
-fn printWithVisibleNewlines(source: []const u8) void {
+/// Helper function for printing test failure information.
+pub fn failPrintWithVisibleNewlines(source: []const u8) void {
     var i: usize = 0;
     while (std.mem.findScalar(u8, source[i..], '\n')) |nl| : (i += nl + 1) {
-        printLine(source[i..][0..nl]);
+        failPrintLine(source[i..][0..nl]);
     }
-    print("{s}␃\n", .{source[i..]}); // End of Text symbol (ETX)
+    failPrint("{s}␃\n", .{source[i..]}); // End of Text symbol (ETX)
 }
 
-fn printLine(line: []const u8) void {
+/// Helper function for printing test failure information.
+pub fn failPrintLine(line: []const u8) void {
     if (line.len != 0) switch (line[line.len - 1]) {
-        ' ', '\t' => return print("{s}⏎\n", .{line}), // Return symbol
+        ' ', '\t' => return failPrint("{s}⏎\n", .{line}), // Return symbol
         else => {},
     };
-    print("{s}\n", .{line});
-}
-
-test {
-    try expectEqualStrings("foo", "foo");
+    failPrint("{s}\n", .{line});
 }
 
 /// Exhaustively check that allocation failures within `test_fn` are handled without
@@ -1139,7 +1169,7 @@ pub fn checkAllAllocationFailures(
         } else |err| switch (err) {
             error.OutOfMemory => {
                 if (failing_allocator_inst.allocated_bytes != failing_allocator_inst.freed_bytes) {
-                    print(
+                    failPrint(
                         "\nfail_index: {d}/{d}\nallocated bytes: {d}\nfreed bytes: {d}\nallocations: {d}\ndeallocations: {d}\nallocation that was made to fail: {f}",
                         .{
                             fail_index,
@@ -1173,14 +1203,14 @@ fn CheckAllAllocationFailuresExtraArgs(comptime TestFn: type) type {
 
     const ArgsTuple = std.meta.ArgsTuple(TestFn);
 
-    const fields = @typeInfo(ArgsTuple).@"struct".fields;
-    if (fields.len == 0 or fields[0].type != std.mem.Allocator) {
+    const field_types = @typeInfo(ArgsTuple).@"struct".field_types;
+    if (field_types.len == 0 or field_types[0] != std.mem.Allocator) {
         @compileError("The provided function must have an " ++ @typeName(std.mem.Allocator) ++ " as its first argument");
     }
 
-    var extra_args: [fields.len - 1]type = undefined;
-    for (&extra_args, fields[1..]) |*arg, field| {
-        arg.* = field.type;
+    var extra_args: [field_types.len - 1]type = undefined;
+    for (&extra_args, field_types[1..]) |*arg, field_type| {
+        arg.* = field_type;
     }
 
     return @Tuple(&extra_args);
@@ -1212,8 +1242,8 @@ test "checkAllAllocationFailures provide result type to 'extra_args' argument" {
 /// Given a type, references all the declarations inside, so that the semantic analyzer sees them.
 pub fn refAllDecls(comptime T: type) void {
     if (!builtin.is_test) return;
-    inline for (comptime std.meta.declarations(T)) |decl| {
-        _ = &@field(T, decl.name);
+    inline for (comptime std.meta.declarations(T)) |decl_name| {
+        _ = &@field(T, decl_name);
     }
 }
 
@@ -1276,11 +1306,14 @@ pub const Reader = struct {
 
 /// A `Io.Reader` that gets its data from another `Io.Reader`, and always
 /// writes to its own buffer (and returns 0) during `stream` and `readVec`.
+/// Note: zero length buffers are not supported.
 pub const ReaderIndirect = struct {
     in: *Io.Reader,
     interface: Io.Reader,
 
     pub fn init(in: *Io.Reader, buffer: []u8) ReaderIndirect {
+        assert(buffer.len > 0);
+
         return .{
             .in = in,
             .interface = .{
@@ -1331,6 +1364,70 @@ pub const ReaderIndirect = struct {
             error.WriteFailed => unreachable,
             else => |e| return e,
         };
+    }
+};
+
+/// A `Io.Writer` that writes its data to another `Io.Writer`, and only
+/// writes new data to its own buffer during `drain`.
+/// Note: zero length buffers are not supported.
+pub const WriterIndirect = struct {
+    out: *Io.Writer,
+    interface: Io.Writer,
+
+    pub fn init(out: *Io.Writer, buffer: []u8) WriterIndirect {
+        assert(buffer.len > 0);
+
+        return .{
+            .out = out,
+            .interface = .{
+                .vtable = &.{
+                    .drain = drain,
+                },
+                .buffer = buffer,
+                .end = 0,
+            },
+        };
+    }
+
+    fn drain(w: *Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize {
+        const w_indirect: *WriterIndirect = @alignCast(@fieldParentPtr("interface", w));
+
+        // Write all data in the buffer to `out`
+        try w_indirect.out.writeAll(w.buffer[0..w.end]);
+        w.end = 0;
+
+        // Refill buffer using data
+        {
+            const end_before_fill = w.end;
+            for (data[0 .. data.len - 1]) |bytes| {
+                const dest = w.buffer[w.end..];
+                const len = @min(bytes.len, dest.len);
+                @memcpy(dest[0..len], bytes[0..len]);
+                w.end += len;
+            }
+            const pattern = data[data.len - 1];
+            switch (pattern.len) {
+                0 => {},
+                1 => {
+                    const len = @min(w.buffer[w.end..].len, splat);
+                    @memset(w.buffer[w.end..][0..len], pattern[0]);
+                    w.end += len;
+                },
+                else => {
+                    const dest = w.buffer[w.end..];
+                    for (0..splat) |i| {
+                        const start_i = i * pattern.len;
+                        if (start_i >= dest.len) break;
+                        const remaining = dest[start_i..];
+                        const len = @min(pattern.len, remaining.len);
+                        @memcpy(remaining[0..len], pattern[0..len]);
+                        w.end += len;
+                    }
+                },
+            }
+
+            return w.end - end_before_fill;
+        }
     }
 };
 

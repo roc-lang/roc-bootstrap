@@ -14,7 +14,7 @@ const Symbol = bits.Symbol;
 pub const Instruction = struct {
     prefix: Prefix = .none,
     encoding: Encoding,
-    ops: [4]Operand = .{.none} ** 4,
+    ops: [4]Operand = @splat(.none),
 
     pub const Mnemonic = Encoding.Mnemonic;
 
@@ -237,9 +237,11 @@ pub const Instruction = struct {
                         .sib => |sib| {
                             try w.print("{f} ", .{sib.ptr_size});
 
-                            if (mem.isSegmentRegister()) {
-                                return w.print("{s}:0x{x}", .{ @tagName(sib.base.reg), sib.disp });
-                            }
+                            if (mem.isSegmentRegister()) return w.print("{s}:{s}0x{x}", .{
+                                @tagName(sib.base.reg),
+                                if (sib.disp < 0) "-" else "",
+                                @abs(sib.disp),
+                            });
 
                             try w.writeByte('[');
 
@@ -250,13 +252,13 @@ pub const Instruction = struct {
                                 .frame => |frame_index| try w.print("{f}", .{frame_index}),
                                 .table => try w.print("Table", .{}),
                                 .rip_inst => |inst_index| try w.print("RipInst({d})", .{inst_index}),
-                                .nav => |nav| try w.print("Nav({d})", .{@intFromEnum(nav)}),
-                                .uav => |uav| try w.print("Uav({d})", .{@intFromEnum(uav.val)}),
+                                .nav => |nav| try w.print("Nav({d})", .{@backingInt(nav)}),
+                                .uav => |uav| try w.print("Uav({d})", .{@backingInt(uav.val)}),
                                 .lazy_sym => |lazy_sym| try w.print("LazySym({s}, {d})", .{
                                     @tagName(lazy_sym.kind),
-                                    @intFromEnum(lazy_sym.ty),
+                                    @backingInt(lazy_sym.ty),
                                 }),
-                                .extern_func => |extern_func| try w.print("ExternFunc({d})", .{@intFromEnum(extern_func)}),
+                                .extern_func => |extern_func| try w.print("ExternFunc({d})", .{@backingInt(extern_func)}),
                             }
                             if (mem.scaleIndex()) |si| {
                                 if (any) try w.writeAll(" + ");
@@ -335,7 +337,7 @@ pub const Instruction = struct {
         var inst: Instruction = .{
             .prefix = prefix,
             .encoding = encoding,
-            .ops = [1]Operand{.none} ** 4,
+            .ops = @splat(.none),
         };
         @memcpy(inst.ops[0..ops.len], ops);
         return inst;
@@ -845,14 +847,14 @@ fn Encoder(comptime opts: Options) type {
                     @as(u8, ~@intFromBool(fields.r)) << 7 |
                         @as(u8, ~@intFromBool(fields.x)) << 6 |
                         @as(u8, ~@intFromBool(fields.b)) << 5 |
-                        @as(u8, @intFromEnum(fields.m)) << 0,
+                        @as(u8, @backingInt(fields.m)) << 0,
                 );
 
                 try self.w.writeByte(
                     @as(u8, @intFromBool(fields.w)) << 7 |
                         @as(u8, ~@as(u4, @intCast(fields.v.enc()))) << 3 |
                         @as(u8, @intFromBool(fields.l)) << 2 |
-                        @as(u8, @intFromEnum(fields.p)) << 0,
+                        @as(u8, @backingInt(fields.p)) << 0,
                 );
             } else {
                 try self.w.writeByte(0b1100_0101);
@@ -860,7 +862,7 @@ fn Encoder(comptime opts: Options) type {
                     @as(u8, ~@intFromBool(fields.r)) << 7 |
                         @as(u8, ~@as(u4, @intCast(fields.v.enc()))) << 3 |
                         @as(u8, @intFromBool(fields.l)) << 2 |
-                        @as(u8, @intFromEnum(fields.p)) << 0,
+                        @as(u8, @backingInt(fields.p)) << 0,
                 );
             }
         }
@@ -1171,7 +1173,7 @@ fn expectEqualHexStrings(expected: []const u8, given: []const u8, assembly: []co
     defer testing.allocator.free(expected_fmt);
     const given_fmt = try std.fmt.allocPrint(testing.allocator, "{x}", .{given});
     defer testing.allocator.free(given_fmt);
-    const idx = std.mem.indexOfDiff(u8, expected_fmt, given_fmt).?;
+    const idx = std.mem.findDiff(u8, expected_fmt, given_fmt).?;
     const padding = try testing.allocator.alloc(u8, idx + 5);
     defer testing.allocator.free(padding);
     @memset(padding, ' ');
@@ -2272,9 +2274,9 @@ const Assembler = struct {
 
     fn mnemonicFromString(bytes: []const u8) ?Instruction.Mnemonic {
         const ti = @typeInfo(Instruction.Mnemonic).@"enum";
-        inline for (ti.fields) |field| {
-            if (std.mem.eql(u8, bytes, field.name)) {
-                return @field(Instruction.Mnemonic, field.name);
+        inline for (ti.field_names) |field_name| {
+            if (std.mem.eql(u8, bytes, field_name)) {
+                return @field(Instruction.Mnemonic, field_name);
             }
         }
         return null;
@@ -2325,9 +2327,9 @@ const Assembler = struct {
 
     fn registerFromString(bytes: []const u8) ?Register {
         const ti = @typeInfo(Register).@"enum";
-        inline for (ti.fields) |field| {
-            if (std.mem.eql(u8, bytes, field.name)) {
-                return @field(Register, field.name);
+        inline for (ti.field_names) |field_name| {
+            if (std.mem.eql(u8, bytes, field_name)) {
+                return @field(Register, field_name);
             }
         }
         return null;

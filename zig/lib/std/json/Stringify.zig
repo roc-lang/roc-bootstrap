@@ -54,8 +54,8 @@ else
     void = if (build_mode_has_safety) .none else {},
 
 const build_mode_has_safety = switch (@import("builtin").mode) {
-    .Debug, .ReleaseSafe => true,
-    .ReleaseFast, .ReleaseSmall => false,
+    .debug, .safe => true,
+    .fast, .small => false,
 };
 
 /// The `safety_checks_hint` parameter determines how much memory is used to enable assertions that the above grammar is being followed,
@@ -66,7 +66,7 @@ const build_mode_has_safety = switch (@import("builtin").mode) {
 /// If `.checked_to_fixed_depth` is used, there is additionally an assertion that the nesting depth never exceeds the given limit.
 /// `.checked_to_fixed_depth` embeds the storage required in the `Stringify` struct.
 /// `.assumed_correct` requires no space and performs none of these assertions.
-/// In `ReleaseFast` and `ReleaseSmall` mode, the given `safety_checks_hint` is ignored and is always treated as `.assumed_correct`.
+/// In fast and small optimization modes, the given `safety_checks_hint` is ignored and is always treated as `.assumed_correct`.
 const safety_checks_hint: union(enum) {
     /// Rounded up to the nearest multiple of 8.
     checked_to_fixed_depth: usize,
@@ -127,7 +127,7 @@ pub fn endObject(self: *Stringify) Error!void {
 fn pushIndentation(self: *Stringify, mode: IndentationMode) !void {
     switch (safety_checks) {
         .checked_to_fixed_depth => {
-            BitStack.pushWithStateAssumeCapacity(&self.nesting_stack, &self.indent_level, @intFromEnum(mode));
+            BitStack.pushWithStateAssumeCapacity(&self.nesting_stack, &self.indent_level, @backingInt(mode));
         },
         .assumed_correct => {
             self.indent_level += 1;
@@ -137,7 +137,7 @@ fn pushIndentation(self: *Stringify, mode: IndentationMode) !void {
 fn popIndentation(self: *Stringify, expected_mode: IndentationMode) void {
     switch (safety_checks) {
         .checked_to_fixed_depth => {
-            assert(BitStack.popWithState(&self.nesting_stack, &self.indent_level) == @intFromEnum(expected_mode));
+            assert(BitStack.popWithState(&self.nesting_stack, &self.indent_level) == @backingInt(expected_mode));
         },
         .assumed_correct => {
             self.indent_level -= 1;
@@ -202,7 +202,7 @@ fn valueDone(self: *Stringify) void {
 fn isObjectKeyExpected(self: *const Stringify) ?bool {
     switch (safety_checks) {
         .checked_to_fixed_depth => return self.indent_level > 0 and
-            BitStack.peekWithState(&self.nesting_stack, self.indent_level) == @intFromEnum(IndentationMode.object) and
+            BitStack.peekWithState(&self.nesting_stack, self.indent_level) == @backingInt(IndentationMode.object) and
             self.next_punctuation != .colon,
         .assumed_correct => return null,
     }
@@ -401,13 +401,13 @@ pub fn write(self: *Stringify, v: anytype) Error!void {
                 return v.jsonStringify(self);
             }
 
-            if (!enum_info.is_exhaustive) {
-                inline for (enum_info.fields) |field| {
-                    if (v == @field(T, field.name)) {
+            if (enum_info.mode == .nonexhaustive) {
+                inline for (enum_info.field_names) |field_name| {
+                    if (v == @field(T, field_name)) {
                         break;
                     }
                 } else {
-                    return self.write(@intFromEnum(v));
+                    return self.write(@backingInt(v));
                 }
             }
 
@@ -424,15 +424,15 @@ pub fn write(self: *Stringify, v: anytype) Error!void {
             const info = @typeInfo(T).@"union";
             if (info.tag_type) |UnionTagType| {
                 try self.beginObject();
-                inline for (info.fields) |u_field| {
-                    if (v == @field(UnionTagType, u_field.name)) {
-                        try self.objectField(u_field.name);
-                        if (u_field.type == void) {
+                inline for (info.field_names, info.field_types) |u_field_name, u_field_type| {
+                    if (v == @field(UnionTagType, u_field_name)) {
+                        try self.objectField(u_field_name);
+                        if (u_field_type == void) {
                             // void v is {}
                             try self.beginObject();
                             try self.endObject();
                         } else {
-                            try self.write(@field(v, u_field.name));
+                            try self.write(@field(v, u_field_name));
                         }
                         break;
                     }
@@ -455,16 +455,16 @@ pub fn write(self: *Stringify, v: anytype) Error!void {
             } else {
                 try self.beginObject();
             }
-            inline for (S.fields) |Field| {
+            inline for (S.field_names, S.field_types) |field_name, field_type| {
                 // don't include void fields
-                if (Field.type == void) continue;
+                if (field_type == void) continue;
 
                 var emit_field = true;
 
                 // don't include optional fields that are null when emit_null_optional_fields is set to false
-                if (@typeInfo(Field.type) == .optional) {
+                if (@typeInfo(field_type) == .optional) {
                     if (self.options.emit_null_optional_fields == false) {
-                        if (@field(v, Field.name) == null) {
+                        if (@field(v, field_name) == null) {
                             emit_field = false;
                         }
                     }
@@ -472,9 +472,9 @@ pub fn write(self: *Stringify, v: anytype) Error!void {
 
                 if (emit_field) {
                     if (!S.is_tuple) {
-                        try self.objectField(Field.name);
+                        try self.objectField(field_name);
                     }
-                    try self.write(@field(v, Field.name));
+                    try self.write(@field(v, field_name));
                 }
             }
             if (S.is_tuple) {
@@ -858,7 +858,7 @@ test "stringify non-exhaustive enum" {
         _,
     };
     try testStringify("\"foo\"", E.foo, .{});
-    try testStringify("1", @as(E, @enumFromInt(1)), .{});
+    try testStringify("1", @as(E, @fromBackingInt(@intCast(1))), .{});
 }
 
 test "stringify enum literals" {

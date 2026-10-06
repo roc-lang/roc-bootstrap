@@ -22,7 +22,6 @@ const Primitives = struct {
     f32: f32,
     f64: f64,
     u0: u0,
-    i0: i0,
     u1: u1,
     i1: i1,
     u8: u8,
@@ -35,7 +34,6 @@ const primitives_0 = Primitives{
     .f32 = 0,
     .f64 = 0,
     .u0 = 0,
-    .i0 = 0,
     .u1 = 0,
     .i1 = 0,
     .u8 = 0,
@@ -48,7 +46,6 @@ const primitives_0_doc_0 =
     \\  "f32": 0,
     \\  "f64": 0,
     \\  "u0": 0,
-    \\  "i0": 0,
     \\  "u1": 0,
     \\  "i1": 0,
     \\  "u8": 0,
@@ -62,7 +59,6 @@ const primitives_0_doc_1 = // looks like a float.
     \\  "f32": 0.0,
     \\  "f64": 0.0,
     \\  "u0": 0.0,
-    \\  "i0": 0.0,
     \\  "u1": 0.0,
     \\  "i1": 0.0,
     \\  "u8": 0.0,
@@ -76,7 +72,6 @@ const primitives_1 = Primitives{
     .f32 = 1073741824,
     .f64 = 1152921504606846976,
     .u0 = 0,
-    .i0 = 0,
     .u1 = 1,
     .i1 = -1,
     .u8 = 255,
@@ -89,7 +84,6 @@ const primitives_1_doc_0 =
     \\  "f32": 1073741824,
     \\  "f64": 1152921504606846976,
     \\  "u0": 0,
-    \\  "i0": 0,
     \\  "u1": 1,
     \\  "i1": -1,
     \\  "u8": 255,
@@ -103,7 +97,6 @@ const primitives_1_doc_1 = // float rounding.
     \\  "f32": 1073741825,
     \\  "f64": 1152921504606846977,
     \\  "u0": 0,
-    \\  "i0": 0,
     \\  "u1": 1,
     \\  "i1": -1,
     \\  "u8": 255,
@@ -670,7 +663,7 @@ test "parse into tuple" {
         float: f64,
         string: []const u8,
     };
-    const T = std.meta.Tuple(&.{
+    const T = @Tuple(&.{
         i64,
         f64,
         bool,
@@ -680,7 +673,7 @@ test "parse into tuple" {
             foo: i32,
             bar: []const u8,
         },
-        std.meta.Tuple(&.{ u8, []const u8, u8 }),
+        @Tuple(&.{ u8, []const u8, u8 }),
         Union,
     });
     const str =
@@ -779,7 +772,40 @@ test "parseFromTokenSource" {
 }
 
 test "max_value_len" {
-    try testing.expectError(error.ValueTooLong, parseFromSlice([]u8, testing.allocator, "\"0123456789\"", .{ .max_value_len = 5 }));
+    try testMaxValueLen([]u8, .alloc_if_needed);
+    try testMaxValueLen([]const u8, .alloc_always);
+    try testMaxValueLen([:0]u8, .alloc_if_needed);
+    try testMaxValueLen([:0]const u8, .alloc_if_needed);
+
+    // If the value can be returned as a reference to the buffer, max_value_len doesn't apply.
+    {
+        const parsed = try parseFromSlice([]const u8, testing.allocator, "\"123\"", .{ .max_value_len = 1 });
+        defer parsed.deinit();
+        try testing.expectEqualStrings("123", parsed.value);
+    }
+    // If the value is returned as a number without needing intermediate allocations, max_value_len doesn't apply.
+    {
+        const parsed = try parseFromSlice(u32, testing.allocator, "\"001\"", .{ .max_value_len = 1 });
+        defer parsed.deinit();
+        try testing.expectEqual(1, parsed.value);
+    }
+}
+
+fn testMaxValueLen(comptime T: type, when: Scanner.AllocWhen) !void {
+    const parsed = try parseFromSlice(T, testing.allocator, "\"12345\"", .{
+        .max_value_len = 5,
+        .allocate = when,
+    });
+    defer parsed.deinit();
+    try testing.expectEqualStrings("12345", parsed.value);
+
+    try testing.expectError(
+        error.ValueTooLong,
+        parseFromSlice(T, testing.allocator, "\"123456\"", .{
+            .max_value_len = 5,
+            .allocate = when,
+        }),
+    );
 }
 
 test "parse into vector" {

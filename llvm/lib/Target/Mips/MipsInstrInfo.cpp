@@ -39,8 +39,9 @@ using namespace llvm;
 // Pin the vtable to this file.
 void MipsInstrInfo::anchor() {}
 
-MipsInstrInfo::MipsInstrInfo(const MipsSubtarget &STI, unsigned UncondBr)
-    : MipsGenInstrInfo(Mips::ADJCALLSTACKDOWN, Mips::ADJCALLSTACKUP),
+MipsInstrInfo::MipsInstrInfo(const MipsSubtarget &STI,
+                             const MipsRegisterInfo &RI, unsigned UncondBr)
+    : MipsGenInstrInfo(STI, RI, Mips::ADJCALLSTACKDOWN, Mips::ADJCALLSTACKUP),
       Subtarget(STI), UncondBrOpc(UncondBr) {}
 
 const MipsInstrInfo *MipsInstrInfo::create(MipsSubtarget &STI) {
@@ -635,7 +636,8 @@ bool MipsInstrInfo::SafeInLoadDelaySlot(const MachineInstr &MIInSlot,
     return false;
 
   return !llvm::any_of(LoadMI.defs(), [&](const MachineOperand &Op) {
-    return Op.isReg() && MIInSlot.readsRegister(Op.getReg(), /*TRI=*/nullptr);
+    return Op.isReg() && MIInSlot.readsRegister(Op.getReg(), /*TRI=*/nullptr) &&
+           !MIInSlot.hasRegisterImplicitUseOperand(Op.getReg());
   });
 }
 

@@ -40,7 +40,7 @@ const Thread = struct {
     steal_ready_search_index: u32,
     /// For ensuring multiple fibers waiting on the same file descriptor and
     /// filter use the same kevent.
-    wait_queues: std.AutoArrayHashMapUnmanaged(WaitQueueKey, *Fiber),
+    wait_queues: std.array_hash_map.Auto(WaitQueueKey, *Fiber),
 
     const WaitQueueKey = struct {
         ident: usize,
@@ -79,7 +79,7 @@ const Fiber = struct {
     awaiter: ?*Fiber,
     queue_next: ?*Fiber,
     cancel_thread: ?*Thread,
-    awaiting_completions: std.StaticBitSet(3),
+    awaiting_completions: std.bit_set.Static(3),
 
     const finished: ?*Fiber = @ptrFromInt(@alignOf(Thread));
 
@@ -332,7 +332,7 @@ fn schedule(k: *Kqueue, thread: *Thread, ready_queue: Fiber.Queue) void {
                 .flags = std.c.EV.ADD | std.c.EV.ONESHOT,
                 .fflags = std.c.NOTE.TRIGGER,
                 .data = 0,
-                .udata = @intFromEnum(Completion.UserData.wakeup),
+                .udata = @backingInt(Completion.UserData.wakeup),
             },
         };
         // If an error occurs it only pessimises scheduling.
@@ -439,7 +439,7 @@ fn idle(k: *Kqueue, thread: *Thread) void {
             @panic(@errorName(err)); // TODO
         };
         var maybe_ready_queue: ?Fiber.Queue = null;
-        for (events_buffer[0..n]) |event| switch (@as(Completion.UserData, @enumFromInt(event.udata))) {
+        for (events_buffer[0..n]) |event| switch (@as(Completion.UserData, @fromBackingInt(@intCast(event.udata)))) {
             .unused => unreachable, // bad submission queued?
             .wakeup => {},
             .cleanup => @panic("failed to notify other threads that we are exiting"),
@@ -522,7 +522,7 @@ const SwitchMessage = struct {
                         .flags = std.c.EV.ADD | std.c.EV.ONESHOT,
                         .fflags = std.c.NOTE.TRIGGER,
                         .data = 0,
-                        .udata = @intFromEnum(Completion.UserData.exit),
+                        .udata = @backingInt(Completion.UserData.exit),
                     },
                 };
                 _ = kevent(each_thread.kq_fd, &changes, &.{}, null) catch |err| {
@@ -650,10 +650,8 @@ pub fn io(k: *Kqueue) Io {
             .netBindIp = netBindIp,
             .netConnectIp = netConnectIp,
             .netConnectUnix = netConnectUnix,
-            .netClose = netClose,
             .netShutdown = netShutdown,
             .netRead = netRead,
-            .netWrite = netWrite,
             .netSend = netSend,
             .netReceive = netReceive,
             .netInterfaceNameResolve = netInterfaceNameResolve,
@@ -877,7 +875,7 @@ fn dirAccess(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8, options: Dir
     _ = options;
     @panic("TODO");
 }
-fn dirCreateFile(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8, flags: File.CreateFlags) File.OpenError!File {
+fn dirCreateFile(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8, flags: Dir.CreateFileOptions) File.OpenError!File {
     const k: *Kqueue = @ptrCast(@alignCast(userdata));
     _ = k;
     _ = dir;
@@ -885,7 +883,7 @@ fn dirCreateFile(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8, flags: F
     _ = flags;
     @panic("TODO");
 }
-fn dirOpenFile(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8, flags: File.OpenFlags) File.OpenError!File {
+fn dirOpenFile(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8, flags: Dir.OpenFileOptions) File.OpenError!File {
     const k: *Kqueue = @ptrCast(@alignCast(userdata));
     _ = k;
     _ = dir;
@@ -1270,23 +1268,6 @@ fn netRead(userdata: ?*anyopaque, fd: net.Socket.Handle, data: [][]u8) net.Strea
     }
 }
 
-fn netWrite(userdata: ?*anyopaque, dest: net.Socket.Handle, header: []const u8, data: []const []const u8, splat: usize) net.Stream.Writer.Error!usize {
-    const k: *Kqueue = @ptrCast(@alignCast(userdata));
-    _ = k;
-    _ = dest;
-    _ = header;
-    _ = data;
-    _ = splat;
-    @panic("TODO");
-}
-
-fn netClose(userdata: ?*anyopaque, handles: []const net.Socket.Handle) void {
-    const k: *Kqueue = @ptrCast(@alignCast(userdata));
-    _ = k;
-    _ = handles;
-    @panic("TODO");
-}
-
 fn netShutdown(userdata: ?*anyopaque, handle: net.Socket.Handle, how: net.ShutdownHow) net.ShutdownError!void {
     const k: *Kqueue = @ptrCast(@alignCast(userdata));
     _ = k;
@@ -1401,9 +1382,9 @@ fn openSocketPosix(
     };
     errdefer closeFd(socket_fd);
 
-    if (options.ip6_only) {
+    if (options.ip6_only) |ip6_only| {
         if (posix.IPV6 == void) return error.OptionUnsupported;
-        try setSocketOption(k, socket_fd, posix.IPPROTO.IPV6, posix.IPV6.V6ONLY, 0);
+        try setSocketOption(k, socket_fd, posix.IPPROTO.IPV6, posix.IPV6.V6ONLY, @intFromBool(ip6_only));
     }
 
     return socket_fd;
@@ -1422,6 +1403,7 @@ fn posixBind(
             .INTR => continue,
             .CANCELED => return error.Canceled,
 
+            .ACCES => return error.AccessDenied,
             .ADDRINUSE => return error.AddressInUse,
             .BADF => |err| return errnoBug(err), // File descriptor used after closed.
             .INVAL => |err| return errnoBug(err), // invalid parameters
