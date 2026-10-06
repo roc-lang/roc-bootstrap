@@ -70,14 +70,19 @@ so changing source identity does not invalidate otherwise identical compilation.
 
 The initial release checks one full x86_64 Linux rebuild, including native
 LLVM, host Zig, target libraries, and archive assembly. This is an expensive
-check of the new recipe. The native packages are built independently in the
-host-tools and x86 target jobs and compared using recorded NAR hashes; their
-development outputs are not transferred with the small runtime closure.
-Existing target-stage and assembly outputs use Nix's `--rebuild` comparison.
-It does not establish bit-for-bit reproducibility for
-every cross target. Routine iteration should use warm-cache and declared-input
-invalidation checks; further full rebuilds are useful when the toolchain or
-recipes change.
+check of the new recipe, so it is split across two parallel jobs to stay inside
+GitHub's six-hour job limit. The `reproduce-native` job builds native LLVM and
+host Zig from scratch and compares their NAR hashes with those recorded by the
+host-tools job (their development outputs are not transferred with the small
+runtime closure), then rebuilds the shared host tools from those independent
+inputs with Nix's `--rebuild`. The x86_64 Linux target job rebuilds the target
+stages and the release archive with `--rebuild` and compares the archive bytes.
+A single job doing both exceeded the limit: the native LLVM rebuild alone took
+2h21m and host Zig 29m, and the x86_64 LLVM stage was still rebuilding when the
+job was cancelled (run 37376806355). This does not establish bit-for-bit
+reproducibility for every cross target. Routine iteration should use warm-cache
+and declared-input invalidation checks; further full rebuilds are useful when
+the toolchain or recipes change.
 
 Roc performance measurements use `ReleaseFast`, `-Dstrip=false`, four jobs,
 separate Zig caches, an isolated Roc application cache, and recorded baseline
@@ -103,9 +108,30 @@ Generators retain normal caching on unchanged inputs.
 
 The source import, retained patch audit, LLVM assertion harness, and initial complete
 x86_64 Linux Nix dependency build are validated locally. Roc correctness and
-measured cache results are recorded below. Independent compiled-output
-reproduction, the other seven release targets, and GitHub release provenance
-remain gates for the release workflow; no release has been published.
+measured cache results are recorded below.
+
+Hosted validation on GitHub runners, all with publication and attestation
+disabled:
+
+* Runs 37299463411 and 37326836202 failed at Zig stage3 in the shared native
+  tools. The cause was an escaped inline-buffer lifetime in Zig's build maker
+  (`appendModuleFlags` kept a slice of a local query's dynamic-linker buffer
+  after returning). Copying the path into the argv arena fixes it, a regression
+  through the real argument collector fails on the original code, and raw argument
+  bytes are now retained for diagnostics.
+* Run 37376806355 (`c6b7847a6`) passed the shared native tools and seven of the
+  eight target builds. The x86_64 Linux target build passed, but its combined
+  independent rebuild was cancelled by the six-hour job limit (a timeout, not a
+  correctness failure).
+* Run 37453114235 (`a3b314053`, x86_64 Linux with reproducibility enabled) passed
+  every job: shared native tools (2h05m), independent native rebuild (2h03m, with
+  native LLVM and host Zig NAR hashes matching the shared build), and the x86_64
+  Linux target build with clean stage and release rebuilds (3h32m), where the
+  rebuilt archive is byte-identical.
+
+All eight targets have not yet been built at a single commit, and GitHub release
+provenance remains a gate for the release workflow; no release has been
+published.
 
 The initial complete Linux bundle and flat-archive consumption results below
 predate the runtime host-triple correction. Cross-target configuration used the
@@ -133,9 +159,10 @@ sibling workspace, with release validation under
 
 This corrected local bundle is being used for full Roc checks after merging
 current upstream main. The historical Roc results below identify their earlier
-source snapshots; they are not a claim that the new full local matrix has
-finished. The other release targets and independent compiled-output reproduction
-remain outstanding.
+source snapshots; the final-source Roc matrix is recorded in Roc's upgrade pull
+request. Independent compiled-output reproduction for x86_64 Linux is established
+by hosted run 37453114235 above; an eight-target run at the release commit
+remains outstanding.
 
 Checks completed locally:
 
@@ -285,8 +312,9 @@ attestation. Assembling metadata for this integration branch reused every
 compiled stage. A subsequent `nix build --offline` of the complete bundle also
 passed: only metadata and bundle assembly ran, with every compilation reused
 and no GitHub attestation API dependency. Independent compiled-output
-reproduction and complete bundles for the other seven targets remain release
-CI gates.
+reproduction for x86_64 Linux has since passed in hosted CI, and the other seven
+targets have built successfully there; complete bundles for all eight targets at
+the release commit remain a release CI gate.
 
 The subsequent hashed-package consumer check exposed a stock Zig 0.17 cache
 defect in that wrapped archive format: standalone `zig fetch` hashes the detected
