@@ -16,8 +16,13 @@ mkdir -p "$build_dir/zig-global-cache" "$build_dir/zig-local-cache"
 export ZIG_GLOBAL_CACHE_DIR="$build_dir/zig-global-cache"
 export ZIG_LOCAL_CACHE_DIR="$build_dir/zig-local-cache"
 zig="$host_prefix/bin/zig"
-compiler="$zig;cc;-fno-sanitize=all;-s;-target;$target;-mcpu=$cpu"
-cxx_compiler="$zig;c++;-fno-sanitize=all;-s;-target;$target;-mcpu=$cpu"
+# These libraries are linked statically into the roc executable, which exports
+# nothing. Hidden visibility keeps their symbols out of its dynamic symbol
+# table; on macOS, every exported or weak symbol is per-launch dyld work. It is
+# part of the compiler command, not CMAKE_<LANG>_FLAGS, because stages such as
+# binaryen.sh replace those flags.
+compiler="$zig;cc;-fno-sanitize=all;-s;-fvisibility=hidden;-target;$target;-mcpu=$cpu"
+cxx_compiler="$zig;c++;-fno-sanitize=all;-s;-fvisibility=hidden;-fvisibility-inlines-hidden;-target;$target;-mcpu=$cpu"
 prefix_map="-ffile-prefix-map=$source_root=/usr/src/roc-bootstrap -ffile-prefix-map=$build_dir=/usr/src/roc-bootstrap-build"
 
 cross_cmake() {

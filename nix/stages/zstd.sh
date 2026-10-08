@@ -15,6 +15,9 @@ case "$target" in
     *) library_name=libzstd.a ;;
 esac
 cd "$build_dir"
+# Hidden visibility for the same reason as cross-cmake.sh. Unless these macros
+# are defined, zstd's headers mark its API with explicit default visibility,
+# which takes precedence over -fvisibility=hidden.
 "$host_prefix/bin/zig" build-lib \
   -j"${BOOTSTRAP_JOBS:-${CMAKE_BUILD_PARALLEL_LEVEL:-2}}" \
   --name zstd \
@@ -24,6 +27,11 @@ cd "$build_dir"
   -femit-bin="$install_prefix/lib/$library_name" \
   -lc \
   -cflags \
+  -fvisibility=hidden \
+  -DZSTDLIB_VISIBLE= \
+  -DZSTDLIB_HIDDEN= \
+  -DZSTDERRORLIB_VISIBILITY= \
+  -DZDICTLIB_VISIBILITY= \
   -ffile-prefix-map="$source_root=/usr/src/roc-bootstrap" \
   -ffile-prefix-map="$build_dir=/usr/src/roc-bootstrap-build" -- \
   "$source_root/zstd/lib/decompress/zstd_ddict.c" \
