@@ -11,8 +11,8 @@ import zipfile
 
 TARGETS = (
     "aarch64-linux-musl", "aarch64-macos-none", "aarch64-windows-gnu",
-    "arm-linux-musleabihf", "x86-linux-musl", "x86_64-linux-musl",
-    "x86_64-macos-none", "x86_64-windows-gnu",
+    "arm-linux-musleabihf", "x86-linux-musl", "x86_64-freebsd-none",
+    "x86_64-linux-musl", "x86_64-macos-none", "x86_64-windows-gnu",
 )
 COMPONENTS = {
     "zig": "0.17.0", "llvm": "22.1.8", "clang": "22.1.8", "lld": "22.1.8",
