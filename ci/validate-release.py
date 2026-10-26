@@ -12,7 +12,8 @@ import zipfile
 TARGETS = (
     "aarch64-linux-musl", "aarch64-macos-none", "aarch64-windows-gnu",
     "arm-linux-musleabihf", "x86-linux-musl", "x86_64-freebsd-none",
-    "x86_64-linux-musl", "x86_64-macos-none", "x86_64-windows-gnu",
+    "x86_64-linux-musl", "x86_64-macos-none", "x86_64-netbsd-none",
+    "x86_64-openbsd-none", "x86_64-windows-gnu",
 )
 # LLVM's e_ident[EI_OSABI] for compiled objects. Without a fixed OS ABI, objects
 # using GNU features get ELFOSABI_GNU. Assembler-only objects (BLAKE3) keep 0,

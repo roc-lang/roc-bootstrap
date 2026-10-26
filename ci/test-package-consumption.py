@@ -19,7 +19,8 @@ import tempfile
 import threading
 
 
-TARGETS = ("x86_64-linux-musl", "x86_64-windows-gnu", "x86_64-freebsd-none")
+TARGETS = ("x86_64-linux-musl", "x86_64-windows-gnu", "x86_64-freebsd-none",
+           "x86_64-netbsd-none", "x86_64-openbsd-none")
 
 
 @contextmanager

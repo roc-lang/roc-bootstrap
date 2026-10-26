@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the exact eight release assets before creating a release draft."""
+"""Validate the exact set of release assets before creating a release draft."""
 
 import importlib.util
 from pathlib import Path
@@ -19,4 +19,4 @@ if actual != expected:
 for target in validator.TARGETS:
     suffix = ".zip" if "windows" in target else ".tar.xz"
     validator.validate(directory / (target + suffix), target, revision, lock)
-print("validated all eight release assets")
+print(f"validated all {len(validator.TARGETS)} release assets")

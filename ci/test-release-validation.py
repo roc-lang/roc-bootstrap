@@ -70,7 +70,8 @@ class ReleasePolicy(unittest.TestCase):
         return asset
 
     def test_accepts_both_release_formats(self):
-        for target in ("x86_64-linux-musl", "aarch64-windows-gnu", "x86_64-freebsd-none"):
+        for target in ("x86_64-linux-musl", "aarch64-windows-gnu", "x86_64-freebsd-none",
+                       "x86_64-netbsd-none", "x86_64-openbsd-none"):
             with self.subTest(target=target):
                 validator.validate(self.bundle(target), target, REVISION)
 
