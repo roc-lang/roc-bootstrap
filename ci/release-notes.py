@@ -8,12 +8,14 @@ import sys
 if len(sys.argv) != 3:
     sys.exit("usage: release-notes.py <tag> <source-commit>")
 tag, revision = sys.argv[1:]
-if tag != "zig-0.17.0" or not re.fullmatch(r"[0-9a-f]{40}", revision):
+if tag != "zig-0.17.0-1" or not re.fullmatch(r"[0-9a-f]{40}", revision):
     sys.exit("tag or source revision does not match this release configuration")
 repository = os.environ["GITHUB_REPOSITORY"]
 run_id = os.environ["GITHUB_RUN_ID"]
 print(f"""Dependencies for Zig 0.17.0: LLVM/Clang/LLD 22.1.8, Binaryen 130,
-zlib 1.3.1, and zstd 1.5.2. Every target uses the baseline CPU.
+zlib 1.3.1, and zstd 1.5.2. Every target uses the baseline CPU. This release
+adds x86_64 FreeBSD and OpenBSD; Roc's existing `zig-0.17.0` pins for the
+other targets remain valid.
 
 Built from [{revision}](https://github.com/{repository}/commit/{revision}) in
 [GitHub Actions](https://github.com/{repository}/actions/runs/{run_id}) using the
@@ -30,7 +32,7 @@ archive bytes against the release manifest:
 sha256sum --check --ignore-missing SHA256SUMS
 ```
 
-All eight archives must pass SLSA build-provenance verification before this draft
+All ten archives must pass SLSA build-provenance verification before this draft
 is created. For an explicit release provenance audit:
 
 ```sh
