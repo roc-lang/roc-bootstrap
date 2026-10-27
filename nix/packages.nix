@@ -13,7 +13,6 @@ let
     "arm-linux-musleabihf"
     "x86-linux-musl"
     "x86_64-freebsd-none"
-    "x86_64-netbsd-none"
     "x86_64-openbsd-none"
     "x86_64-linux-musl"
     "x86_64-macos-none"

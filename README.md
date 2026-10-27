@@ -96,7 +96,7 @@ When it succeeds, the dependency bundle is in `out/<target>-<cpu>/`.
 
 The flake pins the build tools and builds without network access inside the
 Nix sandbox. Linux builders on `x86_64-linux` and `aarch64-linux` can build all
-eleven release targets:
+ten release targets:
 
 ```sh
 nix build .#release-x86_64-linux-musl
@@ -110,7 +110,7 @@ metadata. This layout supports Zig 0.17's hashed package cache, including
 standalone fetch followed by a consumer build. `deps-<target>` exposes its
 `include/` and `lib/` directly. The default
 package is the builder architecture's Linux musl dependency bundle. `release`
-builds all eleven archives. Each bundle includes `roc-deps-build.json` describing
+builds all ten archives. Each bundle includes `roc-deps-build.json` describing
 its source revision, component versions, target, baseline CPU, builder, and
 flake lock. CI releases require a clean committed source tree.
 
@@ -121,7 +121,7 @@ cache, and the default compile concurrency is bounded. The `host-tools` package
 contains the installed tools and Zig library tree needed for cross compilation.
 
 The [release workflow](.github/workflows/release-roc-deps.yml) transfers the
-complete host-tools runtime closure to target jobs, validates all eleven bundles,
+complete host-tools runtime closure to target jobs, validates all ten bundles,
 checks an x86_64 Linux rebuild, and signs SLSA build-provenance attestations.
 It creates a draft only after those checks pass. See
 [the upgrade validation record](docs/zig-0.17-upgrade.md) for the local checks
