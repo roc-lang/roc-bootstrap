@@ -11,9 +11,14 @@ import zipfile
 
 TARGETS = (
     "aarch64-linux-musl", "aarch64-macos-none", "aarch64-windows-gnu",
-    "arm-linux-musleabihf", "x86-linux-musl", "x86_64-linux-musl",
-    "x86_64-macos-none", "x86_64-windows-gnu",
+    "arm-linux-musleabihf", "x86-linux-musl", "x86_64-freebsd-none",
+    "x86_64-linux-musl", "x86_64-macos-none", "x86_64-openbsd-none",
+    "x86_64-windows-gnu",
 )
+# LLVM's e_ident[EI_OSABI] for compiled objects. Without a fixed OS ABI, objects
+# using GNU features get ELFOSABI_GNU. Assembler-only objects (BLAKE3) keep 0,
+# but never come first in a checked library.
+ELF_OSABI = {"linux": (0, 3), "freebsd": (9,), "openbsd": (12,)}
 COMPONENTS = {
     "zig": "0.17.0", "llvm": "22.1.8", "clang": "22.1.8", "lld": "22.1.8",
     "binaryen": "130", "zlib": "1.3.1", "zstd": "1.5.2",
@@ -60,24 +65,28 @@ def verify_library(stream, target):
             stream.seek(end)
             continue
         data = stream.read(min(20, end - stream.tell()))
-        architecture = target.split("-")[0]
-        if "linux" in target:
+        architecture, operating_system = target.split("-")[:2]
+        if operating_system in ELF_OSABI:
             expected = {"x86": (1, 3), "x86_64": (2, 62), "arm": (1, 40), "aarch64": (2, 183)}[architecture]
             if len(data) < 20 or data[:4] != b"\x7fELF" or data[5] not in (1, 2):
                 raise ValueError("expected an ELF object")
             actual = (data[4], int.from_bytes(data[18:20], "little" if data[5] == 1 else "big"))
             if actual != expected:
                 raise ValueError(f"ELF architecture mismatch: {actual} != {expected}")
-        elif "macos" in target:
+            if data[7] not in ELF_OSABI[operating_system]:
+                raise ValueError(f"ELF OS ABI mismatch: {data[7]} not in {ELF_OSABI[operating_system]}")
+        elif operating_system == "macos":
             expected = {"x86_64": 0x01000007, "aarch64": 0x0100000C}[architecture]
             if len(data) < 8 or data[:4] != b"\xcf\xfa\xed\xfe" or int.from_bytes(data[4:8], "little") != expected:
                 raise ValueError("Mach-O architecture mismatch")
-        else:
+        elif operating_system == "windows":
             expected = {"x86_64": 0x8664, "aarch64": 0xAA64}[architecture]
             # COFF bigobj places the machine after its signature and version.
             machine = data[6:8] if data[:4] == b"\0\0\xff\xff" else data[:2]
             if int.from_bytes(machine, "little") != expected:
                 raise ValueError("COFF architecture mismatch")
+        else:
+            raise ValueError(f"no object format check for {operating_system}")
         return
     raise ValueError("static archive contains no object files")
 

@@ -48,7 +48,8 @@ class ReleasePolicy(unittest.TestCase):
             if "windows" in target:
                 contents = (0xAA64 if target.startswith("aarch64") else 0x8664).to_bytes(2, "little") + bytes(18)
             else:
-                contents = b"\x7fELF\x02\x01" + bytes(12) + (62).to_bytes(2, "little")
+                osabi = validator.ELF_OSABI[target.split("-")[1]][0]
+                contents = b"\x7fELF\x02\x01\x01" + bytes([osabi]) + bytes(10) + (62).to_bytes(2, "little")
             header = b"object.o/       " + b"0           " + b"0     " + b"0     " + b"100644  " + str(len(contents)).encode().ljust(10) + b"`\n"
             files[f"lib/lib{library}.a"] = b"!<arch>\n" + header + contents
         if omit:
@@ -69,7 +70,8 @@ class ReleasePolicy(unittest.TestCase):
         return asset
 
     def test_accepts_both_release_formats(self):
-        for target in ("x86_64-linux-musl", "aarch64-windows-gnu"):
+        for target in ("x86_64-linux-musl", "aarch64-windows-gnu", "x86_64-freebsd-none",
+                       "x86_64-openbsd-none"):
             with self.subTest(target=target):
                 validator.validate(self.bundle(target), target, REVISION)
 
@@ -157,6 +159,20 @@ class ReleasePolicy(unittest.TestCase):
                 archive.addfile(entry, io.BytesIO(contents))
         with self.assertRaisesRegex(ValueError, "architecture mismatch"):
             validator.validate(asset, "x86_64-linux-musl", REVISION)
+
+    def test_rejects_wrong_operating_system(self):
+        # A Linux object in a FreeBSD bundle has the right machine but the wrong OS ABI.
+        target = "x86_64-freebsd-none"
+        asset = self.bundle(target)
+        with tarfile.open(asset, "r:xz") as archive:
+            members = [(entry, archive.extractfile(entry).read()) for entry in archive]
+        with tarfile.open(asset, "w:xz") as archive:
+            for entry, contents in members:
+                if entry.name.endswith("libLLVMCore.a"):
+                    contents = contents[:68 + 7] + b"\0" + contents[68 + 8:]
+                archive.addfile(entry, io.BytesIO(contents))
+        with self.assertRaisesRegex(ValueError, "OS ABI mismatch"):
+            validator.validate(asset, target, REVISION)
 
 
 if __name__ == "__main__":

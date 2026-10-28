@@ -12,6 +12,8 @@ let
     "aarch64-windows-gnu"
     "arm-linux-musleabihf"
     "x86-linux-musl"
+    "x86_64-freebsd-none"
+    "x86_64-openbsd-none"
     "x86_64-linux-musl"
     "x86_64-macos-none"
     "x86_64-windows-gnu"
